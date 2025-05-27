@@ -1,14 +1,25 @@
-import { useState } from 'react'
-import { Save, Info, Globe, Calendar, RefreshCw, User, Share2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Save, Info, Globe, Calendar, RefreshCw, User, Share2, Trash2, AlertTriangle, Users, Shield, UserMinus } from 'lucide-react'
+import { useFirebase } from '../contexts/FirebaseContext'
+import { auth, db } from '../firebase'
+import { deleteUser } from 'firebase/auth'
+import { doc, getDoc, updateDoc, deleteDoc, arrayRemove, arrayUnion } from 'firebase/firestore'
 import ShareBudgetModal from './ShareBudgetModal'
 
 export default function SettingsPage({ settings, setSettings, people, budgetCode, budgetName }) {
+  const { user, budget, budgetId } = useFirebase()
   const [localSettings, setLocalSettings] = useState({
     ...settings,
     peopleTransferSettings: settings.peopleTransferSettings || {}
   })
   const [showSaved, setShowSaved] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+  const [showManageUsers, setShowManageUsers] = useState(false)
+  const [budgetUsers, setBudgetUsers] = useState([])
+  const [loadingUsers, setLoadingUsers] = useState(false)
 
   const dateFormats = [
     { value: 'MM/dd/yyyy', label: 'MM/DD/YYYY (US)', example: '05/27/2025' },
@@ -83,6 +94,134 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
   const getDateFormatExample = (format) => {
     const dateFormat = dateFormats.find(f => f.value === format)
     return dateFormat ? dateFormat.example : new Date().toLocaleDateString()
+  }
+
+  // Check if current user is admin
+  const isAdmin = budget?.info?.admins?.includes(user.uid) || budget?.info?.createdBy === user.uid
+
+  // Load budget users
+  useEffect(() => {
+    if (showManageUsers && budget?.info?.members) {
+      loadBudgetUsers()
+    }
+  }, [showManageUsers, budget])
+
+  const loadBudgetUsers = async () => {
+    setLoadingUsers(true)
+    try {
+      const userPromises = budget.info.members.map(async (userId) => {
+        const userDoc = await getDoc(doc(db, 'users', userId))
+        const userData = userDoc.data()
+        return {
+          uid: userId,
+          email: userData?.email || 'Unknown',
+          name: userData?.name || userData?.email || 'Unknown',
+          isAdmin: budget.info.admins?.includes(userId) || budget.info.createdBy === userId,
+          isCreator: budget.info.createdBy === userId
+        }
+      })
+      const users = await Promise.all(userPromises)
+      setBudgetUsers(users)
+    } catch (error) {
+      console.error('Error loading users:', error)
+    }
+    setLoadingUsers(false)
+  }
+
+  const removeUserFromBudget = async (userId) => {
+    if (!isAdmin || userId === user.uid) return
+    
+    try {
+      await updateDoc(doc(db, 'budgets', budgetId), {
+        'info.members': arrayRemove(userId),
+        'info.admins': arrayRemove(userId)
+      })
+      
+      await updateDoc(doc(db, 'users', userId), {
+        budgets: arrayRemove(budgetId)
+      })
+      
+      // Reload users
+      loadBudgetUsers()
+    } catch (error) {
+      console.error('Error removing user:', error)
+    }
+  }
+
+  const toggleAdminStatus = async (userId) => {
+    if (!isAdmin || userId === budget.info.createdBy) return
+    
+    try {
+      const isUserAdmin = budget.info.admins?.includes(userId)
+      
+      if (isUserAdmin) {
+        await updateDoc(doc(db, 'budgets', budgetId), {
+          'info.admins': arrayRemove(userId)
+        })
+      } else {
+        await updateDoc(doc(db, 'budgets', budgetId), {
+          'info.admins': arrayUnion(userId)
+        })
+      }
+      
+      // Reload the budget to get updated admin list
+      window.location.reload()
+    } catch (error) {
+      console.error('Error updating admin status:', error)
+    }
+  }
+
+  const handleDeleteAccount = async () => {
+    setDeleteLoading(true)
+    setDeleteError('')
+    
+    try {
+      // Get all user's budgets
+      const userDoc = await getDoc(doc(db, 'users', user.uid))
+      const userData = userDoc.data()
+      const userBudgets = userData?.budgets || []
+      
+      // Process each budget
+      for (const budgetId of userBudgets) {
+        const budgetRef = doc(db, 'budgets', budgetId)
+        const budgetDoc = await getDoc(budgetRef)
+        
+        if (budgetDoc.exists()) {
+          const budgetData = budgetDoc.data()
+          const members = budgetData.info.members || []
+          const createdBy = budgetData.info.createdBy
+          
+          if (createdBy === user.uid && members.length === 1) {
+            // User is sole owner - delete the budget
+            await deleteDoc(budgetRef)
+          } else {
+            // Remove user from budget members
+            await updateDoc(budgetRef, {
+              'info.members': arrayRemove(user.uid)
+            })
+            
+            // If user was the creator, we might want to assign a new owner
+            // For now, we'll leave the budget without changing ownership
+          }
+        }
+      }
+      
+      // Delete user document
+      await deleteDoc(doc(db, 'users', user.uid))
+      
+      // Delete Firebase Auth account
+      await deleteUser(auth.currentUser)
+      
+      // The auth state listener will handle the redirect
+    } catch (error) {
+      console.error('Error deleting account:', error)
+      if (error.code === 'auth/requires-recent-login') {
+        setDeleteError('Please log out and log in again before deleting your account.')
+      } else {
+        setDeleteError('Failed to delete account. Please try again.')
+      }
+      setDeleteLoading(false)
+    }
   }
 
   return (
@@ -339,6 +478,33 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
         </div>
       )}
 
+      {isAdmin && budgetCode && (
+        <div className="bg-white rounded-lg shadow p-4 md:p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <Shield className="h-5 w-5 text-gray-400" />
+              Manage Users
+            </h3>
+            <button
+              onClick={() => setShowManageUsers(true)}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
+            >
+              <Users className="h-4 w-4" />
+              View Users
+            </button>
+          </div>
+          
+          <div className="text-sm text-gray-600">
+            <p>As an admin, you can:</p>
+            <ul className="list-disc list-inside mt-2 space-y-1 ml-2">
+              <li>Remove users from the budget</li>
+              <li>Promote users to admin role</li>
+              <li>View all budget members</li>
+            </ul>
+          </div>
+        </div>
+      )}
+
       <div className="bg-blue-50 rounded-lg p-4 md:p-6">
         <h3 className="font-semibold text-blue-900 mb-2">About Budget Tracker</h3>
         <p className="text-sm text-blue-800 mb-4">
@@ -356,12 +522,244 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
         </div>
       </div>
 
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4 md:p-6">
+        <h3 className="font-semibold text-red-900 mb-2 flex items-center gap-2">
+          <AlertTriangle className="h-5 w-5" />
+          Danger Zone
+        </h3>
+        <p className="text-sm text-red-800 mb-4">
+          Once you delete your account, there is no going back. Please be certain.
+        </p>
+        <button
+          onClick={() => setShowDeleteModal(true)}
+          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
+        >
+          <Trash2 className="h-4 w-4" />
+          Delete Account
+        </button>
+      </div>
+
       {showShareModal && (
         <ShareBudgetModal
           budgetCode={budgetCode}
           onClose={() => setShowShareModal(false)}
         />
       )}
+
+      {showDeleteModal && (
+        <DeleteAccountModal
+          onClose={() => {
+            setShowDeleteModal(false)
+            setDeleteError('')
+          }}
+          onConfirm={handleDeleteAccount}
+          loading={deleteLoading}
+          error={deleteError}
+        />
+      )}
+
+      {showManageUsers && (
+        <ManageUsersModal
+          onClose={() => setShowManageUsers(false)}
+          users={budgetUsers}
+          loading={loadingUsers}
+          currentUserId={user.uid}
+          onRemoveUser={removeUserFromBudget}
+          onToggleAdmin={toggleAdminStatus}
+          isAdmin={isAdmin}
+        />
+      )}
+    </div>
+  )
+}
+
+function DeleteAccountModal({ onClose, onConfirm, loading, error }) {
+  const [confirmText, setConfirmText] = useState('')
+  const canDelete = confirmText === 'DELETE'
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-md w-full p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2 bg-red-100 rounded-full">
+            <AlertTriangle className="h-6 w-6 text-red-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">Delete Account</h3>
+        </div>
+        
+        <div className="space-y-4">
+          <div className="text-sm text-gray-600 space-y-2">
+            <p>This action will permanently delete:</p>
+            <ul className="list-disc list-inside space-y-1 ml-2">
+              <li>Your account and all personal data</li>
+              <li>All budgets where you are the sole owner</li>
+              <li>Your access to shared budgets</li>
+            </ul>
+            <p className="font-semibold text-red-600 mt-3">This action cannot be undone!</p>
+          </div>
+
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              {error}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Type DELETE to confirm
+            </label>
+            <input
+              type="text"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+              placeholder="Type DELETE here"
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={onConfirm}
+              disabled={!canDelete || loading}
+              className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 ${
+                canDelete && !loading
+                  ? 'bg-red-600 text-white hover:bg-red-700'
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              }`}
+            >
+              {loading ? (
+                <>
+                  <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4" />
+                  Delete Account
+                </>
+              )}
+            </button>
+            <button
+              onClick={onClose}
+              disabled={loading}
+              className="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300 transition-colors disabled:bg-gray-100 disabled:text-gray-400"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ManageUsersModal({ onClose, users, loading, currentUserId, onRemoveUser, onToggleAdmin, isAdmin }) {
+  const [confirmRemove, setConfirmRemove] = useState(null)
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-2xl w-full p-6 max-h-[80vh] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Budget Members
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="text-center py-8">
+              <div className="h-8 w-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+              <p className="text-gray-600">Loading users...</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {users.map((user) => (
+                <div key={user.uid} className="bg-gray-50 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-gray-900">{user.name}</p>
+                        {user.isCreator && (
+                          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Creator</span>
+                        )}
+                        {user.isAdmin && !user.isCreator && (
+                          <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">Admin</span>
+                        )}
+                        {user.uid === currentUserId && (
+                          <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">You</span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-600">{user.email}</p>
+                    </div>
+                    
+                    {isAdmin && user.uid !== currentUserId && (
+                      <div className="flex items-center gap-2">
+                        {!user.isCreator && (
+                          <button
+                            onClick={() => onToggleAdmin(user.uid)}
+                            className={`px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1 ${
+                              user.isAdmin
+                                ? 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                            }`}
+                          >
+                            <Shield className="h-3 w-3" />
+                            {user.isAdmin ? 'Remove Admin' : 'Make Admin'}
+                          </button>
+                        )}
+                        
+                        {confirmRemove === user.uid ? (
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-red-600">Remove?</span>
+                            <button
+                              onClick={() => {
+                                onRemoveUser(user.uid)
+                                setConfirmRemove(null)
+                              }}
+                              className="px-2 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                            >
+                              Yes
+                            </button>
+                            <button
+                              onClick={() => setConfirmRemove(null)}
+                              className="px-2 py-1 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
+                            >
+                              No
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmRemove(user.uid)}
+                            className="px-3 py-1.5 bg-red-100 text-red-700 text-sm rounded-lg hover:bg-red-200 transition-colors flex items-center gap-1"
+                          >
+                            <UserMinus className="h-3 w-3" />
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4 pt-4 border-t">
+          <button
+            onClick={onClose}
+            className="w-full bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300 transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

@@ -16,7 +16,22 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
 
   const loadUserBudgets = async () => {
     try {
-      const userDoc = await getDoc(doc(db, 'users', user.uid))
+      const userDocRef = doc(db, 'users', user.uid)
+      const userDoc = await getDoc(userDocRef)
+      
+      // If user document doesn't exist, create it
+      if (!userDoc.exists()) {
+        console.log('Creating user document on budget load...')
+        await setDoc(userDocRef, {
+          email: user.email,
+          name: user.displayName || user.email,
+          budgets: []
+        })
+        setBudgets([])
+        setLoading(false)
+        return
+      }
+      
       const userData = userDoc.data()
       
       if (userData?.budgets?.length > 0) {
@@ -24,14 +39,20 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
           getDoc(doc(db, 'budgets', budgetId))
         )
         const budgetDocs = await Promise.all(budgetPromises)
-        const budgetData = budgetDocs.map((doc, index) => ({
-          id: userData.budgets[index],
-          ...doc.data()?.info
-        }))
+        const budgetData = budgetDocs
+          .filter(doc => doc.exists())
+          .map((doc, index) => ({
+            id: userData.budgets[index],
+            ...doc.data()?.info
+          }))
         setBudgets(budgetData)
+      } else {
+        setBudgets([])
       }
     } catch (error) {
       console.error('Error loading budgets:', error)
+      console.error('User UID:', user.uid)
+      console.error('User email:', user.email)
       setError('Failed to load budgets')
     } finally {
       setLoading(false)
@@ -73,6 +94,7 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
           createdBy: user.uid,
           createdByName: user.displayName || user.email,
           members: [user.uid],
+          admins: [user.uid], // Budget creator is default admin
           createdAt: serverTimestamp()
         },
         expenses: [],
@@ -132,10 +154,23 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
       const budgetId = budgetDoc.id
       const budgetData = budgetDoc.data()
       
-      // Check if user is already a member
+      // Check if user is already a member using UID (unique per Google account)
       if (budgetData.info.members.includes(user.uid)) {
         setError('You are already a member of this budget')
         return
+      }
+      
+      // First ensure user document exists
+      const userDocRef = doc(db, 'users', user.uid)
+      const userDoc = await getDoc(userDocRef)
+      
+      if (!userDoc.exists()) {
+        console.log('Creating user document for joining user...')
+        await setDoc(userDocRef, {
+          email: user.email,
+          name: user.displayName || user.email,
+          budgets: []
+        })
       }
       
       // Add user to budget members
@@ -151,9 +186,12 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
       // Reload budgets
       await loadUserBudgets()
       setShowJoinModal(false)
+      setError('')
     } catch (error) {
       console.error('Error joining budget:', error)
-      setError('Failed to join budget')
+      console.error('User UID:', user.uid)
+      console.error('User email:', user.email)
+      setError(`Failed to join budget: ${error.message}`)
     }
   }
 
