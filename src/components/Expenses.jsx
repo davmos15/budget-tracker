@@ -179,7 +179,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
           <h3 className="text-lg font-semibold">Expenses</h3>
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600">
-              Total: {settings.currency}{totalAmount.toFixed(2)} per {viewMode}
+              Total: {settings.currency}{totalAmount.toFixed(2)} per {viewMode === 'monthly' ? 'month' : viewMode}
             </span>
             <div className="relative group">
               <Info className="h-4 w-4 text-gray-400 hover:text-gray-600 cursor-help" />

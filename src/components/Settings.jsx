@@ -1,12 +1,14 @@
 import { useState } from 'react'
-import { Save, Info, Globe, Calendar, RefreshCw, User } from 'lucide-react'
+import { Save, Info, Globe, Calendar, RefreshCw, User, Share2 } from 'lucide-react'
+import ShareBudgetModal from './ShareBudgetModal'
 
-export default function SettingsPage({ settings, setSettings, people }) {
+export default function SettingsPage({ settings, setSettings, people, budgetCode, budgetName }) {
   const [localSettings, setLocalSettings] = useState({
     ...settings,
     peopleTransferSettings: settings.peopleTransferSettings || {}
   })
   const [showSaved, setShowSaved] = useState(false)
+  const [showShareModal, setShowShareModal] = useState(false)
 
   const dateFormats = [
     { value: 'MM/dd/yyyy', label: 'MM/DD/YYYY (US)', example: '05/27/2025' },
@@ -309,6 +311,34 @@ export default function SettingsPage({ settings, setSettings, people }) {
         </div>
       </div>
 
+      {budgetCode && (
+        <div className="bg-white rounded-lg shadow p-4 md:p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Budget Sharing</h3>
+            <button
+              onClick={() => setShowShareModal(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+            >
+              <Share2 className="h-4 w-4" />
+              Share Budget
+            </button>
+          </div>
+          
+          <div className="bg-gray-50 rounded-lg p-4">
+            <p className="text-sm text-gray-600 mb-2">Share this code with others to give them access to this budget:</p>
+            <div className="flex items-center gap-4">
+              <div className="text-2xl font-mono font-bold text-blue-600 bg-blue-50 px-4 py-2 rounded">
+                {budgetCode}
+              </div>
+              <div className="text-sm text-gray-500">
+                <p>Budget: {budgetName}</p>
+                <p className="text-xs mt-1">Anyone with this code can join and edit this budget</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-blue-50 rounded-lg p-4 md:p-6">
         <h3 className="font-semibold text-blue-900 mb-2">About Budget Tracker</h3>
         <p className="text-sm text-blue-800 mb-4">
@@ -325,6 +355,13 @@ export default function SettingsPage({ settings, setSettings, people }) {
           </p>
         </div>
       </div>
+
+      {showShareModal && (
+        <ShareBudgetModal
+          budgetCode={budgetCode}
+          onClose={() => setShowShareModal(false)}
+        />
+      )}
     </div>
   )
 }

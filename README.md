@@ -1,10 +1,17 @@
 # Budget Tracker
 
-A comprehensive React-based budget tracking application with support for multiple users, expense categories, income sources, and intelligent bill allocation.
+A comprehensive React-based budget tracking application with **real-time collaboration**, **Firebase authentication**, and support for multiple users, expense categories, income sources, and intelligent bill allocation.
 
-![Budget Tracker](https://img.shields.io/badge/React-18.0-blue) ![Vite](https://img.shields.io/badge/Vite-5.0-purple) ![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.0-cyan)
+![Budget Tracker](https://img.shields.io/badge/React-18.0-blue) ![Vite](https://img.shields.io/badge/Vite-5.0-purple) ![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.0-cyan) ![Firebase](https://img.shields.io/badge/Firebase-11.0-orange)
 
 ## 🌟 Features
+
+### 🔐 Authentication & Collaboration
+- **Firebase Authentication** with email/password and Google sign-in
+- **Real-time data synchronization** across all users
+- **Budget sharing** with 6-character codes
+- **Multi-budget support** - belong to multiple budgets
+- **Secure data storage** with Firebase Firestore
 
 ### 📊 Dashboard Overview
 - Real-time income, expenses, and savings summary with multiple view modes (Weekly, Fortnightly, Monthly, Yearly)
@@ -43,6 +50,7 @@ A comprehensive React-based budget tracking application with support for multipl
 ### Prerequisites
 - Node.js (v14 or higher)
 - npm or yarn
+- Firebase project (free tier works great)
 
 ### Installation
 
@@ -57,12 +65,16 @@ cd budget-tracker
 npm install
 ```
 
-3. Start the development server:
+3. Firebase Configuration:
+   - The Firebase config is already included in `src/firebase.js`
+   - For production, consider using environment variables (see `.env.example`)
+
+4. Start the development server:
 ```bash
 npm run dev
 ```
 
-4. Open your browser and navigate to `http://localhost:5173`
+5. Open your browser and navigate to `http://localhost:5173`
 
 ### Build for Production
 
@@ -73,6 +85,12 @@ npm run build
 The built files will be in the `dist` directory.
 
 ## 📱 Usage Guide
+
+### Getting Started
+1. **Sign Up/Login** - Create an account with email or Google
+2. **Create a Budget** - Start a new budget with a custom name
+3. **Share Budget** - Use the 6-character code to invite others
+4. **Join Budget** - Enter a shared code to join existing budgets
 
 ### Adding Expenses
 1. Navigate to the "Expenses" tab
@@ -114,6 +132,10 @@ The built files will be in the `dist` directory.
 - **React 18** - UI framework with hooks
 - **Vite** - Lightning-fast build tool
 - **Tailwind CSS** - Utility-first CSS framework
+- **Firebase** - Authentication and real-time database
+  - Firebase Auth (Email/Password & Google OAuth)
+  - Cloud Firestore (NoSQL database)
+  - Real-time data synchronization
 - **Lucide React** - Beautiful icon library
 - **Recharts** - Composable charting library
 - **React Hooks** - State management using useState, useEffect, useMemo
@@ -124,21 +146,79 @@ The built files will be in the `dist` directory.
 budget-tracker/
 ├── src/
 │   ├── components/
-│   │   ├── Dashboard.jsx      # Main overview with charts and analytics
-│   │   ├── Expenses.jsx       # Expense management with filtering
-│   │   ├── Salaries.jsx       # Income and person management
-│   │   ├── BillAllocation.jsx # Bill tracking and allocation
-│   │   └── Settings.jsx       # App configuration
-│   ├── App.jsx               # Main app component with routing
+│   │   ├── Auth/              # Authentication components
+│   │   │   ├── Login.jsx      # Login form with email/Google
+│   │   │   └── Signup.jsx     # Signup form with validation
+│   │   ├── Dashboard.jsx      # Main overview with charts
+│   │   ├── Expenses.jsx       # Expense management
+│   │   ├── Salaries.jsx       # Income management
+│   │   ├── BillAllocation.jsx # Bill tracking
+│   │   ├── Settings.jsx       # App configuration
+│   │   ├── BudgetApp.jsx      # Main budget interface
+│   │   ├── BudgetSelection.jsx # Budget list and creation
+│   │   └── ShareBudgetModal.jsx # Budget sharing interface
+│   ├── contexts/
+│   │   └── FirebaseContext.jsx # Firebase state management
+│   ├── firebase.js            # Firebase configuration
+│   ├── App.jsx               # Root component
+│   ├── AppWrapper.jsx        # Authentication wrapper
 │   ├── main.jsx              # Entry point
 │   └── index.css             # Tailwind CSS imports
 ├── public/
+├── .env.example              # Environment variables template
 ├── .gitignore
 ├── package.json
 ├── README.md
 ├── vite.config.js
 ├── tailwind.config.js
 └── postcss.config.js
+```
+
+## 🔥 Firebase Integration
+
+### Database Structure
+```
+firestore/
+├── users/{userId}/
+│   ├── email: string
+│   ├── name: string
+│   ├── createdAt: timestamp
+│   └── budgets: array[budgetId]
+└── budgets/{budgetId}/
+    ├── info/
+    │   ├── name: string
+    │   ├── code: string (6 chars)
+    │   ├── createdBy: userId
+    │   ├── members: array[userId]
+    │   └── createdAt: timestamp
+    ├── expenses: array
+    ├── people: array
+    ├── categories: array
+    ├── salaries: array
+    ├── settings: object
+    ├── lastTransfers: object
+    └── staticAmounts: array
+```
+
+### Security Rules (to be configured in Firebase Console)
+```javascript
+// Firestore Security Rules
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users can only read/write their own data
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Budget access restricted to members
+    match /budgets/{budgetId} {
+      allow read, write: if request.auth != null && 
+        request.auth.uid in resource.data.info.members;
+      allow create: if request.auth != null;
+    }
+  }
+}
 ```
 
 ## 🎨 Key Features Explained

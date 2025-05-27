@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Info, Plus, X, Edit2, Save } from 'lucide-react'
+import { Info, Plus, X } from 'lucide-react'
 
 export default function BillAllocation({ 
   expenses, 
@@ -13,8 +13,6 @@ export default function BillAllocation({
   staticAmounts,
   setStaticAmounts
 }) {
-  const [editingExpenseId, setEditingExpenseId] = useState(null)
-  const [tempLastPaid, setTempLastPaid] = useState({})
   const [showAddStatic, setShowAddStatic] = useState(false)
 
   const calculateDaysSince = (date) => {
@@ -25,59 +23,82 @@ export default function BillAllocation({
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24))
   }
 
-  const calculateAccruedAmount = (expense) => {
-    if (!expense.lastPaid) return 0
+  const calculateRequiredInAccount = (expense, personId) => {
+    if (!expense.lastPaid) return expense.amount // Never paid, need full amount
     
-    const daysSince = calculateDaysSince(expense.lastPaid)
-    const yearlyMultipliers = {
-      weekly: 52,
-      fortnightly: 26,
-      monthly: 12,
-      quarterly: 4,
-      yearly: 1
+    const lastTransferDate = lastTransfers[personId]
+    if (!lastTransferDate) return expense.amount // No transfer recorded, need full amount
+    
+    const lastPaidDate = new Date(expense.lastPaid)
+    const transferDate = new Date(lastTransferDate)
+    
+    // If bill was paid on or after the last transfer, we don't need money for it yet
+    if (lastPaidDate >= transferDate) {
+      return 0
     }
     
-    const yearlyAmount = expense.amount * yearlyMultipliers[expense.frequency]
-    const dailyAmount = yearlyAmount / 365.25
+    // Bill was paid before last transfer, need to accumulate for next payment
+    const today = new Date()
+    const daysSinceTransfer = Math.ceil((today - transferDate) / (1000 * 60 * 60 * 24))
     
-    return dailyAmount * daysSince
+    // Calculate based on frequency
+    switch (expense.frequency) {
+      case 'weekly':
+        // For weekly bills, accumulate based on weeks since transfer
+        const weeksSinceTransfer = daysSinceTransfer / 7
+        return expense.amount * Math.floor(weeksSinceTransfer + 1)
+        
+      case 'fortnightly':
+        // For fortnightly bills, accumulate based on 2-week periods
+        const fortnightsSinceTransfer = daysSinceTransfer / 14
+        return expense.amount * Math.floor(fortnightsSinceTransfer + 1)
+        
+      case 'monthly':
+        // For monthly bills, if we've passed the usual payment day, need full amount
+        const lastPaidDay = lastPaidDate.getDate()
+        const currentDay = today.getDate()
+        const monthsPassed = (today.getFullYear() - lastPaidDate.getFullYear()) * 12 + 
+                           (today.getMonth() - lastPaidDate.getMonth())
+        
+        // If we've passed the payment day this month or it's been over a month
+        if (currentDay >= lastPaidDay || monthsPassed >= 1) {
+          return expense.amount
+        }
+        return 0
+        
+      case 'quarterly':
+        // For quarterly bills, check if 3 months have passed
+        const quartersSinceLastPaid = Math.floor(daysSinceTransfer / 91)
+        return quartersSinceLastPaid >= 1 ? expense.amount : 0
+        
+      case 'yearly':
+        // For yearly bills, check if a year has passed
+        const yearsSinceLastPaid = daysSinceTransfer / 365
+        return yearsSinceLastPaid >= 1 ? expense.amount : 0
+        
+      default:
+        return expense.amount
+    }
   }
 
-  const totalAccrued = useMemo(() => {
-    const expensesTotal = expenses.reduce((sum, expense) => 
-      sum + calculateAccruedAmount(expense), 0
-    )
+  const totalRequiredInAccount = useMemo(() => {
+    const expensesTotal = expenses.reduce((sum, expense) => {
+      const person = people.find(p => p.id === expense.personId)
+      if (!person) return sum
+      return sum + calculateRequiredInAccount(expense, person.id)
+    }, 0)
+    
     const staticTotal = staticAmounts.reduce((sum, item) => sum + item.amount, 0)
     return expensesTotal + staticTotal
-  }, [expenses, staticAmounts])
+  }, [expenses, staticAmounts, people, lastTransfers])
 
-  const totalByPerson = useMemo(() => {
-    const result = {}
-    
-    people.forEach(person => {
-      const personExpenses = expenses.filter(e => e.personId === person.id)
-      const expenseAmount = personExpenses.reduce((sum, expense) => 
-        sum + calculateAccruedAmount(expense), 0
-      )
-      
-      const personStaticAmounts = staticAmounts.filter(s => s.personId === person.id)
-      const staticAmount = personStaticAmounts.reduce((sum, item) => sum + item.amount, 0)
-      
-      result[person.id] = expenseAmount + staticAmount
-    })
-    
-    return result
-  }, [expenses, staticAmounts, people])
-
-  const handleUpdateLastPaid = (expenseId) => {
+  const handleUpdateLastPaid = (expenseId, newDate) => {
     const updatedExpenses = expenses.map(expense => 
       expense.id === expenseId 
-        ? { ...expense, lastPaid: tempLastPaid[expenseId] || expense.lastPaid }
+        ? { ...expense, lastPaid: newDate }
         : expense
     )
     setExpenses(updatedExpenses)
-    setEditingExpenseId(null)
-    setTempLastPaid({})
   }
 
   const handleAddStaticAmount = (newAmount) => {
@@ -96,6 +117,7 @@ export default function BillAllocation({
     })}`
   }
 
+
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow p-4 md:p-6">
@@ -103,39 +125,35 @@ export default function BillAllocation({
           <div>
             <h3 className="text-lg font-semibold">Bills Account Balance</h3>
             <p className="text-sm text-gray-600 mt-1">
-              Track how much should be in your bills account based on payment cycles
+              Track how much should be in your bills account based on payment timing
             </p>
           </div>
           <div className="relative group">
             <Info className="h-4 w-4 text-gray-400 hover:text-gray-600 cursor-help" />
-            <div className="absolute right-0 top-6 w-64 p-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-              The amount shown is calculated based on days since each bill was last paid
+            <div className="absolute right-0 top-6 w-80 p-3 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+              The required amount is calculated based on when bills were last paid relative to your last transfer. 
+              Bills paid after your last transfer show $0 as they're already covered.
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-          <div className="bg-blue-50 rounded-lg p-4">
-            <p className="text-sm text-blue-600 font-medium">Total Bills Account Balance</p>
-            <p className="text-2xl font-bold text-blue-800">{formatCurrency(totalAccrued)}</p>
-          </div>
-          
-          {people.map(person => (
-            <div key={person.id} className="bg-gray-50 rounded-lg p-4">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: person.color }} />
-                <p className="text-sm text-gray-600 font-medium">{person.name}'s Share</p>
-              </div>
-              <p className="text-xl font-bold text-gray-800">
-                {formatCurrency(totalByPerson[person.id] || 0)}
-              </p>
-            </div>
-          ))}
+        <div className="bg-blue-50 rounded-lg p-6 mb-6">
+          <p className="text-sm text-blue-600 font-medium mb-2">Total Bills Account Balance</p>
+          <p className="text-3xl font-bold text-blue-800">{formatCurrency(totalRequiredInAccount)}</p>
+          <p className="text-xs text-blue-600 mt-2">
+            Amount needed to cover upcoming bills based on your transfer schedule
+          </p>
         </div>
 
         <div className="mb-6">
           <div className="flex items-center justify-between mb-4">
             <h4 className="text-md font-semibold">Last Transfer to Bills Account</h4>
+            <div className="relative group">
+              <Info className="h-4 w-4 text-gray-400 hover:text-gray-600 cursor-help" />
+              <div className="absolute right-0 top-6 w-64 p-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                Enter when you last transferred money to your bills account. This affects the required balance calculations.
+              </div>
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {people.map(person => (
@@ -175,15 +193,14 @@ export default function BillAllocation({
                 <th className="px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
                 <th className="px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Frequency</th>
                 <th className="px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Paid</th>
-                <th className="px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Accrued</th>
+                <th className="px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Required in Account</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {expenses.map(expense => {
                 const person = people.find(p => p.id === expense.personId)
                 const category = categories.find(c => c.id === expense.categoryId)
-                const isEditing = editingExpenseId === expense.id
-                const accrued = calculateAccruedAmount(expense)
+                const requiredAmount = calculateRequiredInAccount(expense, expense.personId)
                 
                 return (
                   <tr key={expense.id} className="hover:bg-gray-50">
@@ -202,60 +219,31 @@ export default function BillAllocation({
                     <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {formatCurrency(expense.amount)}
                     </td>
-                    <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm text-gray-600 capitalize">
                       {expense.frequency}
                     </td>
                     <td className="px-4 md:px-6 py-4 whitespace-nowrap">
-                      {isEditing ? (
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="date"
-                            value={tempLastPaid[expense.id] || expense.lastPaid || ''}
-                            onChange={(e) => setTempLastPaid({ ...tempLastPaid, [expense.id]: e.target.value })}
-                            className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                          <button
-                            onClick={() => handleUpdateLastPaid(expense.id)}
-                            className="text-green-600 hover:text-green-800"
-                          >
-                            <Save className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              setEditingExpenseId(null)
-                              setTempLastPaid({})
-                            }}
-                            className="text-gray-600 hover:text-gray-800"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-gray-900">
-                            {expense.lastPaid ? new Date(expense.lastPaid).toLocaleDateString() : 'Never'}
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="date"
+                          value={expense.lastPaid || ''}
+                          onChange={(e) => handleUpdateLastPaid(expense.id, e.target.value)}
+                          className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        {expense.lastPaid && (
+                          <span className="text-xs text-gray-500">
+                            ({calculateDaysSince(expense.lastPaid)}d ago)
                           </span>
-                          {expense.lastPaid && (
-                            <span className="text-xs text-gray-500">
-                              ({calculateDaysSince(expense.lastPaid)}d ago)
-                            </span>
-                          )}
-                          <button
-                            onClick={() => {
-                              setEditingExpenseId(expense.id)
-                              setTempLastPaid({ [expense.id]: expense.lastPaid || '' })
-                            }}
-                            className="text-blue-600 hover:text-blue-800 ml-2"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 md:px-6 py-4 whitespace-nowrap">
-                      <span className={`text-sm font-semibold ${accrued > 0 ? 'text-green-600' : 'text-gray-400'}`}>
-                        {formatCurrency(accrued)}
+                      <span className={`text-sm font-semibold ${requiredAmount > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                        {formatCurrency(requiredAmount)}
                       </span>
+                      {requiredAmount === 0 && expense.lastPaid && lastTransfers[expense.personId] && (
+                        <span className="text-xs text-gray-500 block">Paid this period</span>
+                      )}
                     </td>
                   </tr>
                 )
