@@ -3,11 +3,11 @@ import { Save, Info, Globe, Calendar, RefreshCw, User, Share2, Trash2, AlertTria
 import { useFirebase } from '../contexts/FirebaseContext'
 import { auth, db } from '../firebase'
 import { deleteUser } from 'firebase/auth'
-import { doc, getDoc, updateDoc, deleteDoc, arrayRemove, arrayUnion } from 'firebase/firestore'
+import { doc, getDoc, updateDoc, deleteDoc, arrayRemove, arrayUnion, collection, getDocs } from 'firebase/firestore'
 import ShareBudgetModal from './ShareBudgetModal'
 
 export default function SettingsPage({ settings, setSettings, people, budgetCode, budgetName }) {
-  const { user, budget, budgetId } = useFirebase()
+  const { user, budget, budgetId, budgetOwnerId } = useFirebase()
   const [localSettings, setLocalSettings] = useState({
     ...settings,
     peopleTransferSettings: settings.peopleTransferSettings || {}
@@ -129,17 +129,26 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
   }
 
   const removeUserFromBudget = async (userId) => {
-    if (!isAdmin || userId === user.uid) return
+    if (!isAdmin || userId === user.uid || !budgetOwnerId) return
     
     try {
-      await updateDoc(doc(db, 'budgets', budgetId), {
+      // Remove from budget members
+      await updateDoc(doc(db, 'users', budgetOwnerId, 'budgets', budgetId), {
         'info.members': arrayRemove(userId),
         'info.admins': arrayRemove(userId)
       })
       
-      await updateDoc(doc(db, 'users', userId), {
-        budgets: arrayRemove(budgetId)
-      })
+      // Remove from user's sharedBudgets
+      const userDoc = await getDoc(doc(db, 'users', userId))
+      if (userDoc.exists()) {
+        const userData = userDoc.data()
+        const updatedSharedBudgets = (userData.sharedBudgets || []).filter(
+          sb => !(sb.budgetId === budgetId && sb.ownerId === budgetOwnerId)
+        )
+        await updateDoc(doc(db, 'users', userId), {
+          sharedBudgets: updatedSharedBudgets
+        })
+      }
       
       // Reload users
       loadBudgetUsers()
@@ -149,17 +158,17 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
   }
 
   const toggleAdminStatus = async (userId) => {
-    if (!isAdmin || userId === budget.info.createdBy) return
+    if (!isAdmin || userId === budget.info.createdBy || !budgetOwnerId) return
     
     try {
       const isUserAdmin = budget.info.admins?.includes(userId)
       
       if (isUserAdmin) {
-        await updateDoc(doc(db, 'budgets', budgetId), {
+        await updateDoc(doc(db, 'users', budgetOwnerId, 'budgets', budgetId), {
           'info.admins': arrayRemove(userId)
         })
       } else {
-        await updateDoc(doc(db, 'budgets', budgetId), {
+        await updateDoc(doc(db, 'users', budgetOwnerId, 'budgets', budgetId), {
           'info.admins': arrayUnion(userId)
         })
       }
@@ -179,29 +188,25 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
       // Get all user's budgets
       const userDoc = await getDoc(doc(db, 'users', user.uid))
       const userData = userDoc.data()
-      const userBudgets = userData?.budgets || []
       
-      // Process each budget
-      for (const budgetId of userBudgets) {
-        const budgetRef = doc(db, 'budgets', budgetId)
-        const budgetDoc = await getDoc(budgetRef)
-        
-        if (budgetDoc.exists()) {
-          const budgetData = budgetDoc.data()
-          const members = budgetData.info.members || []
-          const createdBy = budgetData.info.createdBy
-          
-          if (createdBy === user.uid && members.length === 1) {
-            // User is sole owner - delete the budget
-            await deleteDoc(budgetRef)
-          } else {
-            // Remove user from budget members
-            await updateDoc(budgetRef, {
-              'info.members': arrayRemove(user.uid)
+      // Delete user's own budgets
+      const ownBudgetsRef = collection(db, 'users', user.uid, 'budgets')
+      const ownBudgetsSnapshot = await getDocs(ownBudgetsRef)
+      
+      for (const budgetDoc of ownBudgetsSnapshot.docs) {
+        await deleteDoc(budgetDoc.ref)
+      }
+      
+      // Remove user from shared budgets
+      if (userData?.sharedBudgets?.length > 0) {
+        for (const sharedBudget of userData.sharedBudgets) {
+          try {
+            await updateDoc(doc(db, 'users', sharedBudget.ownerId, 'budgets', sharedBudget.budgetId), {
+              'info.members': arrayRemove(user.uid),
+              'info.admins': arrayRemove(user.uid)
             })
-            
-            // If user was the creator, we might want to assign a new owner
-            // For now, we'll leave the budget without changing ownership
+          } catch (error) {
+            console.error('Error removing user from shared budget:', error)
           }
         }
       }

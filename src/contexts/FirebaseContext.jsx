@@ -13,6 +13,7 @@ export function FirebaseProvider({ children }) {
   const [user, setUser] = useState(null)
   const [budget, setBudget] = useState(null)
   const [budgetId, setBudgetId] = useState(null)
+  const [budgetOwnerId, setBudgetOwnerId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [budgetLoading, setBudgetLoading] = useState(false)
 
@@ -26,17 +27,17 @@ export function FirebaseProvider({ children }) {
   }, [])
 
   useEffect(() => {
-    if (!budgetId) {
+    if (!budgetId || !budgetOwnerId || !user) {
       setBudget(null)
       return
     }
 
     setBudgetLoading(true)
     const unsubscribe = onSnapshot(
-      doc(db, 'budgets', budgetId),
+      doc(db, 'users', budgetOwnerId, 'budgets', budgetId),
       (doc) => {
         if (doc.exists()) {
-          setBudget({ id: doc.id, ...doc.data() })
+          setBudget({ id: doc.id, ownerId: budgetOwnerId, ...doc.data() })
         }
         setBudgetLoading(false)
       },
@@ -47,10 +48,11 @@ export function FirebaseProvider({ children }) {
     )
 
     return unsubscribe
-  }, [budgetId])
+  }, [budgetId, budgetOwnerId, user])
 
-  const selectBudget = (id) => {
-    setBudgetId(id)
+  const selectBudget = ({budgetId, ownerId}) => {
+    setBudgetId(budgetId)
+    setBudgetOwnerId(ownerId)
   }
 
   const logout = async () => {
@@ -58,6 +60,7 @@ export function FirebaseProvider({ children }) {
       await signOut(auth)
       setBudget(null)
       setBudgetId(null)
+      setBudgetOwnerId(null)
     } catch (error) {
       console.error('Error signing out:', error)
     }
@@ -67,6 +70,7 @@ export function FirebaseProvider({ children }) {
     user,
     budget,
     budgetId,
+    budgetOwnerId,
     loading,
     budgetLoading,
     selectBudget,

@@ -25,7 +25,7 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
         await setDoc(userDocRef, {
           email: user.email,
           name: user.displayName || user.email,
-          budgets: []
+          sharedBudgets: [] // Track shared budgets
         })
         setBudgets([])
         setLoading(false)
@@ -33,26 +33,47 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
       }
       
       const userData = userDoc.data()
+      const allBudgets = []
       
-      if (userData?.budgets?.length > 0) {
-        const budgetPromises = userData.budgets.map(budgetId => 
-          getDoc(doc(db, 'budgets', budgetId))
-        )
-        const budgetDocs = await Promise.all(budgetPromises)
-        const budgetData = budgetDocs
-          .filter(doc => doc.exists())
-          .map((doc, index) => ({
-            id: userData.budgets[index],
-            ...doc.data()?.info
-          }))
-        setBudgets(budgetData)
-      } else {
-        setBudgets([])
+      // Load user's own budgets
+      const ownBudgetsRef = collection(db, 'users', user.uid, 'budgets')
+      const ownBudgetsSnapshot = await getDocs(ownBudgetsRef)
+      
+      ownBudgetsSnapshot.forEach(doc => {
+        allBudgets.push({
+          id: doc.id,
+          ownerId: user.uid,
+          isOwner: true,
+          ...doc.data().info
+        })
+      })
+      
+      // Load shared budgets
+      if (userData.sharedBudgets?.length > 0) {
+        for (const sharedBudget of userData.sharedBudgets) {
+          try {
+            const budgetDoc = await getDoc(doc(db, 'users', sharedBudget.ownerId, 'budgets', sharedBudget.budgetId))
+            if (budgetDoc.exists()) {
+              const budgetData = budgetDoc.data()
+              // Verify user is still a member
+              if (budgetData.info.members?.includes(user.uid)) {
+                allBudgets.push({
+                  id: sharedBudget.budgetId,
+                  ownerId: sharedBudget.ownerId,
+                  isOwner: false,
+                  ...budgetData.info
+                })
+              }
+            }
+          } catch (error) {
+            console.error('Error loading shared budget:', error)
+          }
+        }
       }
+      
+      setBudgets(allBudgets)
     } catch (error) {
       console.error('Error loading budgets:', error)
-      console.error('User UID:', user.uid)
-      console.error('User email:', user.email)
       setError('Failed to load budgets')
     } finally {
       setLoading(false)
@@ -86,8 +107,8 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
       const budgetCode = generateBudgetCode()
       const budgetId = `budget_${Date.now()}_${user.uid}`
       
-      // Create budget document
-      await setDoc(doc(db, 'budgets', budgetId), {
+      // Create budget in user's subcollection
+      await setDoc(doc(db, 'users', user.uid, 'budgets', budgetId), {
         info: {
           name,
           code: budgetCode,
@@ -120,10 +141,7 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
         staticAmounts: []
       })
       
-      // Update user document
-      await updateDoc(doc(db, 'users', user.uid), {
-        budgets: arrayUnion(budgetId)
-      })
+      // No need to update user document for own budgets
       
       // Reload budgets
       await loadUserBudgets()
@@ -141,46 +159,51 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
 
   const joinBudget = async (code) => {
     try {
-      // Find budget by code
-      const budgetsQuery = query(collection(db, 'budgets'), where('info.code', '==', code.toUpperCase()))
-      const querySnapshot = await getDocs(budgetsQuery)
+      // Search for budget by code across all users
+      let foundBudget = null
+      let ownerUserId = null
       
-      if (querySnapshot.empty) {
+      // Get all users to search their budgets
+      const usersSnapshot = await getDocs(collection(db, 'users'))
+      
+      for (const userDoc of usersSnapshot.docs) {
+        const userBudgetsRef = collection(db, 'users', userDoc.id, 'budgets')
+        const budgetsQuery = query(userBudgetsRef, where('info.code', '==', code.toUpperCase()))
+        const budgetsSnapshot = await getDocs(budgetsQuery)
+        
+        if (!budgetsSnapshot.empty) {
+          foundBudget = budgetsSnapshot.docs[0]
+          ownerUserId = userDoc.id
+          break
+        }
+      }
+      
+      if (!foundBudget) {
         setError('Invalid budget code')
         return
       }
       
-      const budgetDoc = querySnapshot.docs[0]
-      const budgetId = budgetDoc.id
-      const budgetData = budgetDoc.data()
+      const budgetId = foundBudget.id
+      const budgetData = foundBudget.data()
       
-      // Check if user is already a member using UID (unique per Google account)
+      // Check if user is already a member
       if (budgetData.info.members.includes(user.uid)) {
         setError('You are already a member of this budget')
         return
       }
       
-      // First ensure user document exists
-      const userDocRef = doc(db, 'users', user.uid)
-      const userDoc = await getDoc(userDocRef)
-      
-      if (!userDoc.exists()) {
-        console.log('Creating user document for joining user...')
-        await setDoc(userDocRef, {
-          email: user.email,
-          name: user.displayName || user.email,
-          budgets: []
-        })
-      }
-      
       // Add user to budget members
-      await updateDoc(doc(db, 'budgets', budgetId), {
+      await updateDoc(doc(db, 'users', ownerUserId, 'budgets', budgetId), {
         'info.members': arrayUnion(user.uid)
       })
       
-      // Add budget to user's budgets
+      // Add budget reference to user's sharedBudgets
       await updateDoc(doc(db, 'users', user.uid), {
-        budgets: arrayUnion(budgetId)
+        sharedBudgets: arrayUnion({
+          budgetId: budgetId,
+          ownerId: ownerUserId,
+          joinedAt: serverTimestamp()
+        })
       })
       
       // Reload budgets
@@ -189,8 +212,6 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
       setError('')
     } catch (error) {
       console.error('Error joining budget:', error)
-      console.error('User UID:', user.uid)
-      console.error('User email:', user.email)
       setError(`Failed to join budget: ${error.message}`)
     }
   }
@@ -239,7 +260,7 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
           {budgets.map((budget) => (
             <button
               key={budget.id}
-              onClick={() => onSelectBudget(budget.id)}
+              onClick={() => onSelectBudget({budgetId: budget.id, ownerId: budget.ownerId})}
               className="bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 text-left"
             >
               <div className="flex items-start justify-between mb-4">

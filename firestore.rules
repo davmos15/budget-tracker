@@ -1,44 +1,45 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow users to read and write their own user document
+    // User document rules
     match /users/{userId} {
-      allow read: if request.auth != null && (
-        request.auth.uid == userId ||
-        // Allow admins to read user data when managing budget members
-        exists(/databases/$(database)/documents/budgets/$(request.resource.data.checkingBudget)) &&
-        request.auth.uid in get(/databases/$(database)/documents/budgets/$(request.resource.data.checkingBudget)).data.info.admins
-      );
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // User's budgets subcollection
+      match /budgets/{budgetId} {
+        // Users can read budgets they own or are members of
+        allow read: if request.auth != null && (
+          request.auth.uid == userId ||
+          request.auth.uid in resource.data.info.members
+        );
+        
+        // Only the budget owner can create budgets in their collection
+        allow create: if request.auth != null && 
+          request.auth.uid == userId &&
+          request.auth.uid == request.resource.data.info.createdBy &&
+          request.auth.uid in request.resource.data.info.members &&
+          request.auth.uid in request.resource.data.info.admins;
+        
+        // Members can update, but only admins can modify members/admins lists
+        allow update: if request.auth != null && (
+          request.auth.uid in resource.data.info.members &&
+          (
+            !request.resource.data.info.diff(resource.data.info).affectedKeys().hasAny(['members', 'admins']) ||
+            (request.auth.uid in resource.data.info.admins || request.auth.uid == resource.data.info.createdBy)
+          )
+        );
+        
+        // Only the creator can delete
+        allow delete: if request.auth != null && 
+          request.auth.uid == resource.data.info.createdBy;
+      }
     }
     
-    // Allow authenticated users to create budgets
-    match /budgets/{budgetId} {
+    // Allow users to search for budgets by code across all users
+    // This is needed for the join functionality
+    match /{path=**}/budgets/{budgetId} {
       allow read: if request.auth != null && 
-        request.auth.uid in resource.data.info.members;
-      
-      allow create: if request.auth != null && 
-        request.auth.uid == request.resource.data.info.createdBy &&
-        request.auth.uid in request.resource.data.info.members &&
-        request.auth.uid in request.resource.data.info.admins;
-      
-      allow update: if request.auth != null && (
-        // Regular members can update most fields
-        request.auth.uid in resource.data.info.members &&
-        // But only admins can modify members and admins lists
-        (
-          !request.resource.data.info.diff(resource.data.info).affectedKeys().hasAny(['members', 'admins']) ||
-          (request.auth.uid in resource.data.info.admins || request.auth.uid == resource.data.info.createdBy)
-        )
-      );
-      
-      allow delete: if request.auth != null && 
-        request.auth.uid == resource.data.info.createdBy;
-    }
-    
-    // Allow searching budgets by code (for joining)
-    match /budgets/{budgetId} {
-      allow read: if request.auth != null;
+        resource.data.info.code == request.auth.token.budgetCode;
     }
   }
 }

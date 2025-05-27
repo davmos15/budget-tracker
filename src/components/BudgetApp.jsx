@@ -11,7 +11,7 @@ import SettingsPage from './Settings'
 import ShareBudgetModal from './ShareBudgetModal'
 
 export default function BudgetApp({ onBack }) {
-  const { budget, budgetId, budgetLoading } = useFirebase()
+  const { user, budget, budgetId, budgetOwnerId, budgetLoading } = useFirebase()
   const [activeTab, setActiveTab] = useState('dashboard')
   const [showShareModal, setShowShareModal] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -40,11 +40,11 @@ export default function BudgetApp({ onBack }) {
 
   // Save data to Firebase
   const saveToFirebase = async (field, data) => {
-    if (!budgetId) return
+    if (!budgetId || !budgetOwnerId) return
     
     setSaving(true)
     try {
-      await updateDoc(doc(db, 'budgets', budgetId), {
+      await updateDoc(doc(db, 'users', budgetOwnerId, 'budgets', budgetId), {
         [field]: data
       })
     } catch (error) {
