@@ -102,17 +102,13 @@ export default function BillAllocation({
       }
     })
 
-    staticAmounts.forEach(item => {
-      if (byPerson[item.personId]) {
-        byPerson[item.personId].static += item.amount
-      }
-    })
+    const staticTotal = staticAmounts.reduce((sum, item) => sum + item.amount, 0)
 
     Object.keys(byPerson).forEach(id => {
-      byPerson[id].total = byPerson[id].expenses + byPerson[id].static
+      byPerson[id].total = byPerson[id].expenses
     })
 
-    const totalRequired = Object.values(byPerson).reduce((sum, p) => sum + p.total, 0)
+    const totalRequired = Object.values(byPerson).reduce((sum, p) => sum + p.total, 0) + staticTotal
 
     return { totalRequired, byPerson, expenseDetails }
   }, [expenses, staticAmounts, people, lastTransfers])
@@ -528,18 +524,9 @@ export default function BillAllocation({
         ) : (
           <div className="space-y-2">
             {staticAmounts.map(item => {
-              const person = people.find(p => p.id === item.personId)
               return (
                 <div key={item.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-semibold" style={{ backgroundColor: person?.color }}>
-                      {person?.name?.charAt(0)}
-                    </div>
-                    <div>
-                      <span className="text-sm font-medium text-slate-700">{item.description}</span>
-                      <span className="text-xs text-slate-400 ml-2">{person?.name}</span>
-                    </div>
-                  </div>
+                  <span className="text-sm font-medium text-slate-700">{item.description}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-slate-900">{formatCurrency(item.amount)}</span>
                     <button
@@ -564,7 +551,6 @@ export default function BillAllocation({
 
       {showAddStatic && (
         <StaticAmountModal
-          people={people}
           existing={editingStatic}
           onSave={handleAddStaticAmount}
           onClose={() => { setShowAddStatic(false); setEditingStatic(null) }}
@@ -574,9 +560,8 @@ export default function BillAllocation({
   )
 }
 
-function StaticAmountModal({ people, existing, onSave, onClose }) {
+function StaticAmountModal({ existing, onSave, onClose }) {
   const [formData, setFormData] = useState({
-    personId: existing?.personId || people[0]?.id || '',
     description: existing?.description || '',
     amount: existing?.amount || ''
   })
@@ -585,8 +570,7 @@ function StaticAmountModal({ people, existing, onSave, onClose }) {
     e.preventDefault()
     onSave({
       ...formData,
-      amount: parseFloat(formData.amount),
-      personId: parseInt(formData.personId)
+      amount: parseFloat(formData.amount)
     })
   }
 
@@ -601,18 +585,6 @@ function StaticAmountModal({ people, existing, onSave, onClose }) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="input-label">Person</label>
-            <select
-              value={formData.personId}
-              onChange={(e) => setFormData({ ...formData, personId: e.target.value })}
-              className="input"
-              required
-            >
-              {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
-
           <div>
             <label className="input-label">Description</label>
             <input
