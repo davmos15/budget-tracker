@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { createUserWithEmailAndPassword, updateProfile, signInWithPopup } from 'firebase/auth'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { auth, googleProvider, db } from '../../firebase'
-import { Mail, Lock, User, AlertCircle, UserPlus } from 'lucide-react'
+import { Mail, Lock, User, AlertCircle, UserPlus, Wallet } from 'lucide-react'
 
 export default function Signup({ onSwitchToLogin }) {
   const [name, setName] = useState('')
@@ -64,33 +64,37 @@ export default function Signup({ onSwitchToLogin }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="max-w-md w-full space-y-8">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900">Budget Tracker</h1>
-          <h2 className="mt-2 text-xl text-gray-600">Create your account</h2>
+    <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
+      <div className="max-w-md w-full">
+        <div className="text-center mb-8">
+          <div className="flex items-center justify-center gap-3 mb-6">
+            <div className="p-2.5 bg-gradient-brand rounded-xl text-white">
+              <Wallet className="h-6 w-6" />
+            </div>
+            <h1 className="text-2xl font-bold text-gradient">Budget Tracker</h1>
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900">Create your account</h2>
+          <p className="mt-2 text-slate-500">Start managing your finances today</p>
         </div>
 
-        <div className="bg-white rounded-lg shadow-lg p-8">
+        <div className="card p-8">
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700">
-              <AlertCircle className="h-5 w-5" />
+            <div className="alert alert-danger mb-6">
+              <AlertCircle className="h-5 w-5 flex-shrink-0" />
               <span className="text-sm">{error}</span>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Name
-              </label>
+              <label className="input-label">Full name</label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <User className="absolute left-3.5 top-1/2 transform -translate-y-1/2 h-4.5 w-4.5 text-slate-400" />
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="pl-10 w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="input pl-11"
                   placeholder="John Doe"
                   required
                 />
@@ -98,66 +102,61 @@ export default function Signup({ onSwitchToLogin }) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email address
-              </label>
+              <label className="input-label">Email address</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <Mail className="absolute left-3.5 top-1/2 transform -translate-y-1/2 h-4.5 w-4.5 text-slate-400" />
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="input pl-11"
                   placeholder="you@example.com"
                   required
                 />
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="••••••••"
-                  required
-                />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="input-label">Password</label>
+                <div className="relative">
+                  <Lock className="absolute left-3.5 top-1/2 transform -translate-y-1/2 h-4.5 w-4.5 text-slate-400" />
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="input pl-11"
+                    placeholder="Min 6 chars"
+                    required
+                  />
+                </div>
               </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Confirm Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="pl-10 w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="••••••••"
-                  required
-                />
+              <div>
+                <label className="input-label">Confirm</label>
+                <div className="relative">
+                  <Lock className="absolute left-3.5 top-1/2 transform -translate-y-1/2 h-4.5 w-4.5 text-slate-400" />
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="input pl-11"
+                    placeholder="Re-enter"
+                    required
+                  />
+                </div>
               </div>
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="btn-primary w-full"
             >
               {loading ? (
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
-                  <UserPlus className="h-5 w-5" />
+                  <UserPlus className="h-4.5 w-4.5" />
                   Create Account
                 </>
               )}
@@ -167,17 +166,17 @@ export default function Signup({ onSwitchToLogin }) {
           <div className="mt-6">
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300" />
+                <div className="w-full border-t border-slate-200" />
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">Or continue with</span>
+                <span className="px-3 bg-white text-slate-400">or</span>
               </div>
             </div>
 
             <button
               onClick={handleGoogleSignUp}
               disabled={loading}
-              className="mt-3 w-full py-2 px-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="mt-4 btn-secondary w-full"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -190,10 +189,10 @@ export default function Signup({ onSwitchToLogin }) {
           </div>
 
           <div className="mt-6 text-center text-sm">
-            <span className="text-gray-600">Already have an account? </span>
+            <span className="text-slate-500">Already have an account? </span>
             <button
               onClick={onSwitchToLogin}
-              className="text-blue-600 hover:text-blue-800 font-medium"
+              className="text-brand-600 hover:text-brand-800 font-semibold"
             >
               Sign in
             </button>

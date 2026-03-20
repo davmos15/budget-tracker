@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { collection, doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp, query, where, getDocs } from 'firebase/firestore'
 import { db } from '../firebase'
-import { Plus, Share2, LogOut, Loader, FileText, Users } from 'lucide-react'
+import { Plus, Share2, LogOut, Loader, FileText, Users, Wallet, ArrowRight, X } from 'lucide-react'
 
 export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
   const [budgets, setBudgets] = useState([])
@@ -18,27 +18,24 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
     try {
       const userDocRef = doc(db, 'users', user.uid)
       const userDoc = await getDoc(userDocRef)
-      
-      // If user document doesn't exist, create it
+
       if (!userDoc.exists()) {
-        console.log('Creating user document on budget load...')
         await setDoc(userDocRef, {
           email: user.email,
           name: user.displayName || user.email,
-          sharedBudgets: [] // Track shared budgets
+          sharedBudgets: []
         })
         setBudgets([])
         setLoading(false)
         return
       }
-      
+
       const userData = userDoc.data()
       const allBudgets = []
-      
-      // Load user's own budgets
+
       const ownBudgetsRef = collection(db, 'users', user.uid, 'budgets')
       const ownBudgetsSnapshot = await getDocs(ownBudgetsRef)
-      
+
       ownBudgetsSnapshot.forEach(doc => {
         allBudgets.push({
           id: doc.id,
@@ -47,15 +44,13 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
           ...doc.data().info
         })
       })
-      
-      // Load shared budgets
+
       if (userData.sharedBudgets?.length > 0) {
         for (const sharedBudget of userData.sharedBudgets) {
           try {
             const budgetDoc = await getDoc(doc(db, 'users', sharedBudget.ownerId, 'budgets', sharedBudget.budgetId))
             if (budgetDoc.exists()) {
               const budgetData = budgetDoc.data()
-              // Verify user is still a member
               if (budgetData.info.members?.includes(user.uid)) {
                 allBudgets.push({
                   id: sharedBudget.budgetId,
@@ -70,7 +65,7 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
           }
         }
       }
-      
+
       setBudgets(allBudgets)
     } catch (error) {
       console.error('Error loading budgets:', error)
@@ -91,23 +86,20 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
 
   const createBudget = async (name) => {
     try {
-      // First check if user document exists
       const userDocRef = doc(db, 'users', user.uid)
       const userDoc = await getDoc(userDocRef)
-      
+
       if (!userDoc.exists()) {
-        console.log('Creating user document first...')
         await setDoc(userDocRef, {
           email: user.email,
           name: user.displayName || user.email,
           budgets: []
         })
       }
-      
+
       const budgetCode = generateBudgetCode()
       const budgetId = `budget_${Date.now()}_${user.uid}`
-      
-      // Create budget in user's subcollection
+
       await setDoc(doc(db, 'users', user.uid, 'budgets', budgetId), {
         info: {
           name,
@@ -115,12 +107,12 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
           createdBy: user.uid,
           createdByName: user.displayName || user.email,
           members: [user.uid],
-          admins: [user.uid], // Budget creator is default admin
+          admins: [user.uid],
           createdAt: serverTimestamp()
         },
         expenses: [],
         people: [
-          { id: 1, name: user.displayName?.split(' ')[0] || 'Me', color: '#8b5cf6' }
+          { id: 1, name: user.displayName?.split(' ')[0] || 'Me', color: '#6366f1' }
         ],
         categories: [
           { id: 1, name: 'Transportation', color: '#ef4444' },
@@ -128,7 +120,9 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
           { id: 3, name: 'Health', color: '#10b981' },
           { id: 4, name: 'Utilities', color: '#6366f1' },
           { id: 5, name: 'Food', color: '#ec4899' },
-          { id: 6, name: 'Other', color: '#8b5cf6' }
+          { id: 6, name: 'Subscriptions', color: '#8b5cf6' },
+          { id: 7, name: 'Housing', color: '#0ea5e9' },
+          { id: 8, name: 'Insurance', color: '#14b8a6' }
         ],
         settings: {
           dateFormat: 'MM/dd/yyyy',
@@ -140,15 +134,11 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
         lastTransfers: {},
         staticAmounts: []
       })
-      
-      // No need to update user document for own budgets
-      
-      // Reload budgets
+
       await loadUserBudgets()
       setShowCreateModal(false)
     } catch (error) {
       console.error('Error creating budget:', error)
-      console.error('Error details:', error.code, error.message)
       if (error.code === 'permission-denied') {
         setError('Permission denied. Please check Firestore rules.')
       } else {
@@ -159,45 +149,40 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
 
   const joinBudget = async (code) => {
     try {
-      // Search for budget by code across all users
       let foundBudget = null
       let ownerUserId = null
-      
-      // Get all users to search their budgets
+
       const usersSnapshot = await getDocs(collection(db, 'users'))
-      
+
       for (const userDoc of usersSnapshot.docs) {
         const userBudgetsRef = collection(db, 'users', userDoc.id, 'budgets')
         const budgetsQuery = query(userBudgetsRef, where('info.code', '==', code.toUpperCase()))
         const budgetsSnapshot = await getDocs(budgetsQuery)
-        
+
         if (!budgetsSnapshot.empty) {
           foundBudget = budgetsSnapshot.docs[0]
           ownerUserId = userDoc.id
           break
         }
       }
-      
+
       if (!foundBudget) {
         setError('Invalid budget code')
         return
       }
-      
+
       const budgetId = foundBudget.id
       const budgetData = foundBudget.data()
-      
-      // Check if user is already a member
+
       if (budgetData.info.members.includes(user.uid)) {
         setError('You are already a member of this budget')
         return
       }
-      
-      // Add user to budget members
+
       await updateDoc(doc(db, 'users', ownerUserId, 'budgets', budgetId), {
         'info.members': arrayUnion(user.uid)
       })
-      
-      // Add budget reference to user's sharedBudgets
+
       await updateDoc(doc(db, 'users', user.uid), {
         sharedBudgets: arrayUnion({
           budgetId: budgetId,
@@ -205,8 +190,7 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
           joinedAt: serverTimestamp()
         })
       })
-      
-      // Reload budgets
+
       await loadUserBudgets()
       setShowJoinModal(false)
       setError('')
@@ -218,82 +202,131 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Loader className="h-8 w-8 animate-spin text-blue-600" />
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-brand-100 rounded-2xl mb-4">
+            <Loader className="h-8 w-8 animate-spin text-brand-600" />
+          </div>
+          <p className="text-slate-500 font-medium">Loading your budgets...</p>
+        </div>
       </div>
     )
   }
 
+  const budgetColors = [
+    'from-indigo-500 to-purple-600',
+    'from-emerald-500 to-teal-600',
+    'from-orange-500 to-rose-600',
+    'from-cyan-500 to-blue-600',
+    'from-pink-500 to-violet-600',
+    'from-amber-500 to-orange-600',
+  ]
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-slate-50">
+      {/* Header */}
+      <div className="bg-gradient-brand">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <h1 className="text-2xl font-bold text-gray-900">Budget Tracker</h1>
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
+                <Wallet className="h-5 w-5 text-white" />
+              </div>
+              <h1 className="text-xl font-bold text-white">Budget Tracker</h1>
+            </div>
             <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-600">{user.email}</span>
+              <span className="text-sm text-white/70 hidden sm:block">{user.email}</span>
               <button
                 onClick={onLogout}
-                className="text-gray-500 hover:text-gray-700 flex items-center gap-2"
+                className="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-xl text-white/90 text-sm transition-colors"
               >
-                <LogOut className="h-5 w-5" />
+                <LogOut className="h-4 w-4" />
                 <span className="hidden sm:inline">Logout</span>
               </button>
             </div>
           </div>
         </div>
+
+        {/* Hero section */}
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-16 pt-8">
+          <h2 className="text-3xl md:text-4xl font-bold text-white mb-3">
+            {budgets.length > 0 ? 'Your Budgets' : 'Get Started'}
+          </h2>
+          <p className="text-white/70 text-lg">
+            {budgets.length > 0
+              ? 'Select a budget to manage or create a new one'
+              : 'Create your first budget to start tracking your finances'}
+          </p>
+        </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Your Budgets</h2>
-          <p className="text-gray-600">Select a budget to manage or create a new one</p>
-        </div>
-
+      {/* Budget cards - pulled up into hero */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8">
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-            {error}
+          <div className="alert alert-danger mb-6">
+            <span className="text-sm">{error}</span>
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          {budgets.map((budget) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
+          {budgets.map((budget, index) => (
             <button
               key={budget.id}
               onClick={() => onSelectBudget({budgetId: budget.id, ownerId: budget.ownerId})}
-              className="bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 text-left"
+              className="card p-0 text-left group animate-slide-up overflow-hidden"
+              style={{ animationDelay: `${index * 50}ms` }}
             >
-              <div className="flex items-start justify-between mb-4">
-                <FileText className="h-8 w-8 text-blue-600" />
-                <span className="text-xs text-gray-500 font-mono bg-gray-100 px-2 py-1 rounded">
-                  {budget.code}
-                </span>
+              <div className={`h-2 bg-gradient-to-r ${budgetColors[index % budgetColors.length]}`} />
+              <div className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div className={`p-2.5 rounded-xl bg-gradient-to-br ${budgetColors[index % budgetColors.length]} text-white`}>
+                    <FileText className="h-5 w-5" />
+                  </div>
+                  <span className="text-xs text-slate-400 font-mono bg-slate-50 px-2.5 py-1 rounded-lg">
+                    {budget.code}
+                  </span>
+                </div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-2 group-hover:text-brand-600 transition-colors">
+                  {budget.name}
+                </h3>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm text-slate-500">
+                    <Users className="h-4 w-4" />
+                    <span>{budget.members?.length || 1} member{budget.members?.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-brand-500 group-hover:translate-x-1 transition-all" />
+                </div>
+                {!budget.isOwner && (
+                  <div className="mt-3">
+                    <span className="badge badge-info">Shared by {budget.createdByName}</span>
+                  </div>
+                )}
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">{budget.name}</h3>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Users className="h-4 w-4" />
-                <span>{budget.members?.length || 1} member{budget.members?.length !== 1 ? 's' : ''}</span>
-              </div>
-              <p className="text-xs text-gray-500 mt-2">
-                Created by {budget.createdByName}
-              </p>
             </button>
           ))}
 
+          {/* Create new */}
           <button
             onClick={() => setShowCreateModal(true)}
-            className="bg-blue-50 border-2 border-dashed border-blue-300 rounded-lg hover:bg-blue-100 hover:border-blue-400 transition-colors p-6 flex flex-col items-center justify-center gap-3"
+            className="card border-2 border-dashed border-brand-200 bg-brand-50/50 hover:bg-brand-50 hover:border-brand-300 p-6 flex flex-col items-center justify-center gap-3 min-h-[180px] transition-all group"
           >
-            <Plus className="h-8 w-8 text-blue-600" />
-            <span className="text-blue-600 font-medium">Create New Budget</span>
+            <div className="p-3 bg-brand-100 rounded-2xl group-hover:bg-brand-200 transition-colors">
+              <Plus className="h-6 w-6 text-brand-600" />
+            </div>
+            <span className="text-brand-700 font-semibold">Create New Budget</span>
+            <span className="text-brand-500 text-sm">Start fresh with a new budget</span>
           </button>
 
+          {/* Join existing */}
           <button
             onClick={() => setShowJoinModal(true)}
-            className="bg-green-50 border-2 border-dashed border-green-300 rounded-lg hover:bg-green-100 hover:border-green-400 transition-colors p-6 flex flex-col items-center justify-center gap-3"
+            className="card border-2 border-dashed border-emerald-200 bg-emerald-50/50 hover:bg-emerald-50 hover:border-emerald-300 p-6 flex flex-col items-center justify-center gap-3 min-h-[180px] transition-all group"
           >
-            <Share2 className="h-8 w-8 text-green-600" />
-            <span className="text-green-600 font-medium">Join Existing Budget</span>
+            <div className="p-3 bg-emerald-100 rounded-2xl group-hover:bg-emerald-200 transition-colors">
+              <Share2 className="h-6 w-6 text-emerald-600" />
+            </div>
+            <span className="text-emerald-700 font-semibold">Join Existing Budget</span>
+            <span className="text-emerald-500 text-sm">Enter a budget code to join</span>
           </button>
         </div>
       </div>
@@ -331,38 +364,35 @@ function CreateBudgetModal({ onClose, onCreate }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-md w-full p-6">
-        <h3 className="text-lg font-semibold mb-4">Create New Budget</h3>
-        
-        <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Budget Name
-            </label>
+    <div className="modal-overlay">
+      <div className="modal-content">
+        <div className="px-6 py-5 border-b border-slate-100">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-slate-900">Create New Budget</h3>
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6">
+          <div className="mb-6">
+            <label className="input-label">Budget Name</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="e.g., Family Budget 2024"
+              className="input"
+              placeholder="e.g., Family Budget 2026"
               required
             />
           </div>
 
           <div className="flex gap-3">
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-400"
-            >
+            <button type="submit" disabled={loading} className="btn-primary flex-1">
               {loading ? 'Creating...' : 'Create Budget'}
             </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300 transition-colors"
-            >
+            <button type="button" onClick={onClose} className="btn-secondary flex-1">
               Cancel
             </button>
           </div>
@@ -384,52 +414,55 @@ function JoinBudgetModal({ onClose, onJoin, error }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-md w-full p-6">
-        <h3 className="text-lg font-semibold mb-4">Join Existing Budget</h3>
-        
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Budget Code
-            </label>
-            <input
-              type="text"
-              value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-center text-lg"
-              placeholder="ABC123"
-              maxLength={6}
-              required
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Enter the 6-character code shared by the budget owner
-            </p>
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              type="submit"
-              disabled={loading || code.length !== 6}
-              className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors disabled:bg-green-400"
-            >
-              {loading ? 'Joining...' : 'Join Budget'}
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300 transition-colors"
-            >
-              Cancel
+    <div className="modal-overlay">
+      <div className="modal-content">
+        <div className="px-6 py-5 border-b border-slate-100">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-slate-900">Join Existing Budget</h3>
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
+              <X className="h-5 w-5" />
             </button>
           </div>
-        </form>
+        </div>
+
+        <div className="p-6">
+          {error && (
+            <div className="alert alert-danger mb-4">
+              <span className="text-sm">{error}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit}>
+            <div className="mb-6">
+              <label className="input-label">Budget Code</label>
+              <input
+                type="text"
+                value={code}
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                className="input font-mono text-center text-xl tracking-widest"
+                placeholder="ABC123"
+                maxLength={6}
+                required
+              />
+              <p className="text-xs text-slate-400 mt-2">
+                Enter the 6-character code shared by the budget owner
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                disabled={loading || code.length !== 6}
+                className="btn-success flex-1"
+              >
+                {loading ? 'Joining...' : 'Join Budget'}
+              </button>
+              <button type="button" onClick={onClose} className="btn-secondary flex-1">
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   )

@@ -1,13 +1,12 @@
 import { useState, useMemo } from 'react'
-import { TrendingUp, TrendingDown, DollarSign, Info, ChevronDown, ChevronUp, PieChart, BarChart3, Table } from 'lucide-react'
-import { PieChart as RechartssPieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { TrendingUp, TrendingDown, DollarSign, ChevronDown, ChevronUp, PieChart, BarChart3, Table, AlertTriangle, Clock, CalendarClock, Bell, CreditCard, Zap } from 'lucide-react'
+import { PieChart as RechartsPieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 
 export default function Dashboard({ expenses, salaries, people, categories, settings }) {
   const [viewMode, setViewMode] = useState('Monthly')
-  const [incomeChartType, setIncomeChartType] = useState('table')
-  const [expenseChartType, setExpenseChartType] = useState('table')
+  const [expenseChartType, setExpenseChartType] = useState('pie')
   const [expandedCategories, setExpandedCategories] = useState(new Set())
-  
+
   const viewModes = ['Weekly', 'Fortnightly', 'Monthly', 'Yearly']
   const chartTypes = [
     { id: 'table', icon: Table, label: 'Table' },
@@ -15,388 +14,392 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
     { id: 'bar', icon: BarChart3, label: 'Bar Chart' }
   ]
 
+  const calculateYearlyAmount = (amount, frequency) => {
+    const multipliers = { weekly: 52, fortnightly: 26, monthly: 12, quarterly: 4, yearly: 1 }
+    return amount * (multipliers[frequency] || 0)
+  }
+
   const { totalIncome, totalExpenses, netSavings, incomeByPerson, expensesByCategory, expensesByCategoryDetailed } = useMemo(() => {
-    const calculateYearlyAmount = (amount, frequency) => {
-      const multipliers = {
-        weekly: 52,
-        fortnightly: 26,
-        monthly: 12,
-        quarterly: 4,
-        yearly: 1
-      }
-      return amount * (multipliers[frequency] || 0)
-    }
-
-    const totalIncome = salaries.reduce((sum, salary) => 
-      sum + calculateYearlyAmount(salary.amount, salary.frequency), 0
-    )
-
-    const totalExpenses = expenses.reduce((sum, expense) => 
-      sum + calculateYearlyAmount(expense.amount, expense.frequency), 0
-    )
+    const totalIncome = salaries.reduce((sum, s) => sum + calculateYearlyAmount(s.amount, s.frequency), 0)
+    const totalExpenses = expenses.reduce((sum, e) => sum + calculateYearlyAmount(e.amount, e.frequency), 0)
 
     const incomeByPerson = people.reduce((acc, person) => {
-      const personSalaries = salaries.filter(s => s.personId === person.id)
-      acc[person.id] = personSalaries.reduce((sum, salary) => 
-        sum + calculateYearlyAmount(salary.amount, salary.frequency), 0
-      )
+      acc[person.id] = salaries.filter(s => s.personId === person.id)
+        .reduce((sum, s) => sum + calculateYearlyAmount(s.amount, s.frequency), 0)
       return acc
     }, {})
 
-    const expensesByCategory = categories.reduce((acc, category) => {
-      const categoryExpenses = expenses.filter(e => e.categoryId === category.id)
-      acc[category.id] = {
-        amount: categoryExpenses.reduce((sum, expense) => 
-          sum + calculateYearlyAmount(expense.amount, expense.frequency), 0
-        ),
-        count: categoryExpenses.length
+    const expensesByCategory = categories.reduce((acc, cat) => {
+      const catExpenses = expenses.filter(e => e.categoryId === cat.id)
+      acc[cat.id] = {
+        amount: catExpenses.reduce((sum, e) => sum + calculateYearlyAmount(e.amount, e.frequency), 0),
+        count: catExpenses.length
       }
       return acc
     }, {})
 
-    const expensesByCategoryDetailed = categories.reduce((acc, category) => {
-      const categoryExpenses = expenses.filter(e => e.categoryId === category.id)
-      acc[category.id] = categoryExpenses.map(expense => ({
-        ...expense,
-        yearlyAmount: calculateYearlyAmount(expense.amount, expense.frequency)
+    const expensesByCategoryDetailed = categories.reduce((acc, cat) => {
+      acc[cat.id] = expenses.filter(e => e.categoryId === cat.id).map(e => ({
+        ...e,
+        yearlyAmount: calculateYearlyAmount(e.amount, e.frequency)
       }))
       return acc
     }, {})
 
-    return {
-      totalIncome,
-      totalExpenses,
-      netSavings: totalIncome - totalExpenses,
-      incomeByPerson,
-      expensesByCategory,
-      expensesByCategoryDetailed
-    }
+    return { totalIncome, totalExpenses, netSavings: totalIncome - totalExpenses, incomeByPerson, expensesByCategory, expensesByCategoryDetailed }
   }, [expenses, salaries, people, categories])
 
+  // Smart notifications
+  const notifications = useMemo(() => {
+    const alerts = []
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    expenses.forEach(expense => {
+      // Upcoming payments (next 7 days)
+      if (expense.nextDueDate) {
+        const dueDate = new Date(expense.nextDueDate)
+        dueDate.setHours(0, 0, 0, 0)
+        const daysUntil = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24))
+
+        if (daysUntil < 0) {
+          alerts.push({
+            type: 'overdue',
+            severity: 'danger',
+            icon: AlertTriangle,
+            title: `${expense.name} is overdue`,
+            detail: `Was due ${Math.abs(daysUntil)} day${Math.abs(daysUntil) !== 1 ? 's' : ''} ago - ${formatCurrency(expense.amount)}`,
+            expense
+          })
+        } else if (daysUntil <= 7) {
+          alerts.push({
+            type: 'upcoming',
+            severity: 'warning',
+            icon: CalendarClock,
+            title: `${expense.name} due ${daysUntil === 0 ? 'today' : daysUntil === 1 ? 'tomorrow' : `in ${daysUntil} days`}`,
+            detail: `${formatCurrency(expense.amount)} - ${expense.paymentType === 'direct_debit' ? 'Auto-pay' : 'Manual payment needed'}`,
+            expense
+          })
+        }
+      }
+
+      // Expiring subscriptions (next 30 days)
+      if (expense.subscriptionEndDate) {
+        const endDate = new Date(expense.subscriptionEndDate)
+        endDate.setHours(0, 0, 0, 0)
+        const daysUntilExpiry = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24))
+
+        if (daysUntilExpiry <= 30 && daysUntilExpiry >= 0) {
+          alerts.push({
+            type: 'expiring',
+            severity: 'info',
+            icon: Clock,
+            title: `${expense.name} expires ${daysUntilExpiry === 0 ? 'today' : `in ${daysUntilExpiry} days`}`,
+            detail: `Subscription ends ${endDate.toLocaleDateString()}`,
+            expense
+          })
+        }
+      }
+
+      // Price changes coming up
+      if (expense.priceChangeDate && expense.priceChangeAmount) {
+        const changeDate = new Date(expense.priceChangeDate)
+        changeDate.setHours(0, 0, 0, 0)
+        const daysUntilChange = Math.ceil((changeDate - today) / (1000 * 60 * 60 * 24))
+
+        if (daysUntilChange <= 30 && daysUntilChange >= 0) {
+          const diff = expense.priceChangeAmount - expense.amount
+          alerts.push({
+            type: 'price_change',
+            severity: diff > 0 ? 'warning' : 'success',
+            icon: Zap,
+            title: `${expense.name} price ${diff > 0 ? 'increase' : 'decrease'} in ${daysUntilChange} days`,
+            detail: `${formatCurrency(expense.amount)} -> ${formatCurrency(expense.priceChangeAmount)} (${diff > 0 ? '+' : ''}${formatCurrency(diff)})`,
+            expense
+          })
+        }
+      }
+
+      // Manual transfer reminders for non-direct-debit expenses
+      if (expense.paymentType === 'manual' && expense.nextDueDate) {
+        const dueDate = new Date(expense.nextDueDate)
+        dueDate.setHours(0, 0, 0, 0)
+        const daysUntil = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24))
+
+        if (daysUntil <= 3 && daysUntil >= 0) {
+          alerts.push({
+            type: 'manual_transfer',
+            severity: 'warning',
+            icon: CreditCard,
+            title: `Manual transfer needed: ${expense.name}`,
+            detail: `${formatCurrency(expense.amount)} due ${daysUntil === 0 ? 'today' : daysUntil === 1 ? 'tomorrow' : `in ${daysUntil} days`}`,
+            expense
+          })
+        }
+      }
+    })
+
+    // Sort: overdue first, then by severity
+    const severityOrder = { danger: 0, warning: 1, info: 2, success: 3 }
+    alerts.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity])
+
+    return alerts
+  }, [expenses, settings])
+
   const getAmountForPeriod = (yearlyAmount) => {
-    const divisors = {
-      'Weekly': 52,
-      'Fortnightly': 26,
-      'Monthly': 12,
-      'Yearly': 1
-    }
+    const divisors = { 'Weekly': 52, 'Fortnightly': 26, 'Monthly': 12, 'Yearly': 1 }
     return yearlyAmount / divisors[viewMode]
   }
 
   const formatCurrency = (amount) => {
-    return `${settings.currency}${amount.toLocaleString('en-US', { 
-      minimumFractionDigits: 2, 
-      maximumFractionDigits: 2 
+    return `${settings.currency || '$'}${Math.abs(amount).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
     })}`
-  }
-
-  const getPeriodLabel = () => {
-    return `per ${viewMode.toLowerCase()}`
   }
 
   const toggleCategoryExpansion = (categoryId) => {
     const newExpanded = new Set(expandedCategories)
-    if (newExpanded.has(categoryId)) {
-      newExpanded.delete(categoryId)
-    } else {
-      newExpanded.add(categoryId)
-    }
+    if (newExpanded.has(categoryId)) newExpanded.delete(categoryId)
+    else newExpanded.add(categoryId)
     setExpandedCategories(newExpanded)
   }
 
-  const incomeChartData = people.map(person => ({
-    name: person.name,
-    value: getAmountForPeriod(incomeByPerson[person.id] || 0),
-    color: person.color
-  }))
-
   const expenseChartData = categories
-    .filter(category => expensesByCategory[category.id]?.amount > 0)
-    .map(category => ({
-      name: category.name,
-      value: getAmountForPeriod(expensesByCategory[category.id]?.amount || 0),
-      color: category.color
+    .filter(c => expensesByCategory[c.id]?.amount > 0)
+    .map(c => ({
+      name: c.name,
+      value: Math.round(getAmountForPeriod(expensesByCategory[c.id]?.amount || 0) * 100) / 100,
+      color: c.color
     }))
 
-  const renderIncomeChart = () => {
-    switch (incomeChartType) {
-      case 'pie':
-        return (
-          <ResponsiveContainer width="100%" height={300}>
-            <RechartssPieChart>
-              <Pie
-                data={incomeChartData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                outerRadius={80}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {incomeChartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(value) => formatCurrency(value)} />
-            </RechartssPieChart>
-          </ResponsiveContainer>
-        )
-      case 'bar':
-        return (
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={incomeChartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip formatter={(value) => formatCurrency(value)} />
-              <Bar dataKey="value">
-                {incomeChartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        )
-      default:
-        return (
-          <div className="space-y-3">
-            {people.map(person => (
-              <div key={person.id} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: person.color }} />
-                  <span className="text-sm font-medium">{person.name}</span>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-semibold">{formatCurrency(getAmountForPeriod(incomeByPerson[person.id] || 0))}</p>
-                  <p className="text-xs text-gray-500">{getPeriodLabel()}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )
+  const renderChart = (data, chartType) => {
+    if (data.length === 0) {
+      return <p className="text-sm text-slate-400 text-center py-8">No data to display</p>
     }
-  }
 
-  const renderExpenseChart = () => {
-    switch (expenseChartType) {
+    switch (chartType) {
       case 'pie':
         return (
-          <ResponsiveContainer width="100%" height={300}>
-            <RechartssPieChart>
+          <ResponsiveContainer width="100%" height={280}>
+            <RechartsPieChart>
               <Pie
-                data={expenseChartData}
+                data={data}
                 cx="50%"
                 cy="50%"
-                labelLine={false}
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                outerRadius={80}
-                fill="#8884d8"
+                innerRadius={50}
+                outerRadius={90}
+                paddingAngle={3}
                 dataKey="value"
               >
-                {expenseChartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
+                {data.map((entry, i) => (
+                  <Cell key={i} fill={entry.color} stroke="white" strokeWidth={2} />
                 ))}
               </Pie>
-              <Tooltip formatter={(value) => formatCurrency(value)} />
-            </RechartssPieChart>
+              <Tooltip
+                formatter={(value) => formatCurrency(value)}
+                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
+              />
+              <Legend
+                formatter={(value) => <span className="text-sm text-slate-600">{value}</span>}
+              />
+            </RechartsPieChart>
           </ResponsiveContainer>
         )
       case 'bar':
         return (
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={expenseChartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip formatter={(value) => formatCurrency(value)} />
-              <Bar dataKey="value">
-                {expenseChartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={data} barSize={40}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} />
+              <YAxis tick={{ fontSize: 12, fill: '#64748b' }} />
+              <Tooltip
+                formatter={(value) => formatCurrency(value)}
+                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
+              />
+              <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+                {data.map((entry, i) => (
+                  <Cell key={i} fill={entry.color} />
                 ))}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         )
       default:
-        return (
-          <div className="space-y-3 max-h-64 overflow-y-auto">
-            {categories
-              .filter(category => expensesByCategory[category.id]?.amount > 0)
-              .sort((a, b) => (expensesByCategory[b.id]?.amount || 0) - (expensesByCategory[a.id]?.amount || 0))
-              .map(category => (
-                <div key={category.id}>
-                  <div 
-                    className="flex items-center justify-between cursor-pointer hover:bg-gray-50 p-1 rounded"
-                    onClick={() => toggleCategoryExpansion(category.id)}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: category.color }} />
-                      <span className="text-sm font-medium truncate">{category.name}</span>
-                      <span className="text-xs text-gray-500 flex-shrink-0">({expensesByCategory[category.id]?.count || 0})</span>
-                      {expandedCategories.has(category.id) ? (
-                        <ChevronUp className="h-4 w-4 text-gray-400" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4 text-gray-400" />
-                      )}
-                    </div>
-                    <div className="text-right ml-2">
-                      <p className="text-sm font-semibold">{formatCurrency(getAmountForPeriod(expensesByCategory[category.id]?.amount || 0))}</p>
-                      <p className="text-xs text-gray-500">{getPeriodLabel()}</p>
-                    </div>
-                  </div>
-                  
-                  {expandedCategories.has(category.id) && (
-                    <div className="ml-6 mt-2 space-y-1 border-l-2 border-gray-200 pl-4">
-                      {expensesByCategoryDetailed[category.id]?.map(expense => {
-                        const person = people.find(p => p.id === expense.personId)
-                        return (
-                          <div key={expense.id} className="flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-2">
-                              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: person?.color }} />
-                              <span className="text-gray-600">{expense.name}</span>
-                              <span className="text-gray-400">({expense.frequency})</span>
-                            </div>
-                            <span className="text-gray-700 font-medium">
-                              {formatCurrency(getAmountForPeriod(expense.yearlyAmount))}
-                            </span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              ))}
-          </div>
-        )
+        return null
     }
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
-        <select
-          value={viewMode}
-          onChange={(e) => setViewMode(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
+      {/* Header with view mode */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900">Dashboard</h2>
+          <p className="text-sm text-slate-500 mt-1">Your financial overview at a glance</p>
+        </div>
+        <div className="flex bg-white rounded-xl border border-slate-200 p-1 shadow-sm">
           {viewModes.map(mode => (
-            <option key={mode} value={mode}>{mode}</option>
+            <button
+              key={mode}
+              onClick={() => setViewMode(mode)}
+              className={`px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                viewMode === mode
+                  ? 'bg-brand-600 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {mode}
+            </button>
           ))}
-        </select>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-        <div className="bg-white rounded-lg shadow p-4 md:p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <p className="text-sm text-gray-600">Total Income</p>
-              <p className="text-xl md:text-2xl font-bold text-green-600 break-all">
-                {formatCurrency(getAmountForPeriod(totalIncome))}
-              </p>
-              <p className="text-xs text-gray-500">{getPeriodLabel()}</p>
-            </div>
-            <div className="bg-green-100 p-2 md:p-3 rounded-full ml-2">
-              <TrendingUp className="h-5 w-5 md:h-6 md:w-6 text-green-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-4 md:p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <p className="text-sm text-gray-600">Total Expenses</p>
-              <p className="text-xl md:text-2xl font-bold text-red-600 break-all">
-                {formatCurrency(getAmountForPeriod(totalExpenses))}
-              </p>
-              <p className="text-xs text-gray-500">{getPeriodLabel()}</p>
-            </div>
-            <div className="bg-red-100 p-2 md:p-3 rounded-full ml-2">
-              <TrendingDown className="h-5 w-5 md:h-6 md:w-6 text-red-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-4 md:p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <p className="text-sm text-gray-600">Net Savings</p>
-              <p className={`text-xl md:text-2xl font-bold break-all ${netSavings >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                {formatCurrency(getAmountForPeriod(netSavings))}
-              </p>
-              <p className="text-xs text-gray-500">{getPeriodLabel()}</p>
-            </div>
-            <div className={`${netSavings >= 0 ? 'bg-blue-100' : 'bg-red-100'} p-2 md:p-3 rounded-full ml-2`}>
-              <DollarSign className={`h-5 w-5 md:h-6 md:w-6 ${netSavings >= 0 ? 'text-blue-600' : 'text-red-600'}`} />
-            </div>
-          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-        <div className="bg-white rounded-lg shadow p-4 md:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold">Income by Person</h3>
-            <div className="flex items-center gap-2">
-              <div className="flex bg-gray-100 rounded-lg p-0.5">
-                {chartTypes.map(type => (
-                  <button
-                    key={type.id}
-                    onClick={() => setIncomeChartType(type.id)}
-                    className={`p-1.5 rounded transition-colors ${
-                      incomeChartType === type.id
-                        ? 'bg-white shadow-sm text-blue-600'
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                    title={type.label}
-                  >
-                    <type.icon className="h-4 w-4" />
-                  </button>
-                ))}
-              </div>
-              <div className="relative group">
-                <Info className="h-4 w-4 text-gray-400 hover:text-gray-600 cursor-help" />
-                <div className="absolute right-0 top-6 w-48 p-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                  Shows income distribution per person for the selected period
+      {/* Smart Notifications */}
+      {notifications.length > 0 && (
+        <div className="card p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="p-1.5 bg-amber-100 rounded-lg">
+              <Bell className="h-4 w-4 text-amber-600" />
+            </div>
+            <h3 className="font-semibold text-slate-900">Alerts & Reminders</h3>
+            <span className="badge badge-warning">{notifications.length}</span>
+          </div>
+          <div className="space-y-2.5 max-h-60 overflow-y-auto">
+            {notifications.map((alert, i) => (
+              <div
+                key={i}
+                className={`alert alert-${alert.severity}`}
+              >
+                <alert.icon className="h-4.5 w-4.5 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">{alert.title}</p>
+                  <p className="text-xs opacity-75 mt-0.5">{alert.detail}</p>
                 </div>
               </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="stat-card bg-gradient-success">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm text-white/80 font-medium">Total Income</p>
+            <div className="p-2 bg-white/20 rounded-xl">
+              <TrendingUp className="h-4 w-4" />
             </div>
           </div>
-          {renderIncomeChart()}
+          <p className="text-2xl font-bold">{formatCurrency(getAmountForPeriod(totalIncome))}</p>
+          <p className="text-xs text-white/60 mt-1">per {viewMode.toLowerCase()}</p>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-4 md:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold">Expenses by Category</h3>
-            <div className="flex items-center gap-2">
-              <div className="flex bg-gray-100 rounded-lg p-0.5">
-                {chartTypes.map(type => (
-                  <button
-                    key={type.id}
-                    onClick={() => setExpenseChartType(type.id)}
-                    className={`p-1.5 rounded transition-colors ${
-                      expenseChartType === type.id
-                        ? 'bg-white shadow-sm text-blue-600'
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                    title={type.label}
-                  >
-                    <type.icon className="h-4 w-4" />
-                  </button>
-                ))}
-              </div>
-              <div className="relative group">
-                <Info className="h-4 w-4 text-gray-400 hover:text-gray-600 cursor-help" />
-                <div className="absolute right-0 top-6 w-48 p-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                  Shows expense breakdown by category. Click categories to expand details.
-                </div>
-              </div>
+        <div className="stat-card bg-gradient-danger">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm text-white/80 font-medium">Total Expenses</p>
+            <div className="p-2 bg-white/20 rounded-xl">
+              <TrendingDown className="h-4 w-4" />
             </div>
           </div>
-          {renderExpenseChart()}
+          <p className="text-2xl font-bold">{formatCurrency(getAmountForPeriod(totalExpenses))}</p>
+          <p className="text-xs text-white/60 mt-1">per {viewMode.toLowerCase()}</p>
+        </div>
+
+        <div className={`stat-card ${netSavings >= 0 ? 'bg-gradient-info' : 'bg-gradient-danger'}`}>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm text-white/80 font-medium">Net Savings</p>
+            <div className="p-2 bg-white/20 rounded-xl">
+              <DollarSign className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="text-2xl font-bold">
+            {netSavings < 0 ? '-' : ''}{formatCurrency(getAmountForPeriod(netSavings))}
+          </p>
+          <p className="text-xs text-white/60 mt-1">per {viewMode.toLowerCase()}</p>
         </div>
       </div>
+
+      {/* Expenses by Category */}
+      <div className="card p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-slate-900">Expenses by Category</h3>
+            <div className="flex bg-slate-100 rounded-lg p-0.5">
+              {chartTypes.map(type => (
+                <button
+                  key={type.id}
+                  onClick={() => setExpenseChartType(type.id)}
+                  className={`p-1.5 rounded-md transition-all ${
+                    expenseChartType === type.id
+                      ? 'bg-white shadow-sm text-brand-600'
+                      : 'text-slate-400 hover:text-slate-600'
+                  }`}
+                  title={type.label}
+                >
+                  <type.icon className="h-3.5 w-3.5" />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {expenseChartType === 'table' ? (
+            <div className="space-y-2.5 max-h-72 overflow-y-auto">
+              {categories
+                .filter(c => expensesByCategory[c.id]?.amount > 0)
+                .sort((a, b) => (expensesByCategory[b.id]?.amount || 0) - (expensesByCategory[a.id]?.amount || 0))
+                .map(category => {
+                  const amount = getAmountForPeriod(expensesByCategory[category.id]?.amount || 0)
+                  const percentage = totalExpenses > 0 ? ((expensesByCategory[category.id]?.amount || 0) / totalExpenses * 100) : 0
+                  return (
+                    <div key={category.id}>
+                      <div
+                        className="flex items-center justify-between cursor-pointer hover:bg-slate-50 p-2 rounded-xl transition-colors"
+                        onClick={() => toggleCategoryExpansion(category.id)}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: category.color }} />
+                          <span className="text-sm font-medium text-slate-700 truncate">{category.name}</span>
+                          <span className="badge badge-brand">{expensesByCategory[category.id]?.count || 0}</span>
+                          {expandedCategories.has(category.id)
+                            ? <ChevronUp className="h-3.5 w-3.5 text-slate-400" />
+                            : <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                          }
+                        </div>
+                        <div className="text-right ml-3 flex-shrink-0">
+                          <p className="text-sm font-semibold text-slate-900">{formatCurrency(amount)}</p>
+                          <p className="text-xs text-slate-400">{percentage.toFixed(1)}%</p>
+                        </div>
+                      </div>
+
+                      {expandedCategories.has(category.id) && (
+                        <div className="ml-7 mt-1 space-y-1 border-l-2 pl-4 animate-slide-down" style={{ borderColor: category.color + '40' }}>
+                          {expensesByCategoryDetailed[category.id]?.map(expense => {
+                            const person = people.find(p => p.id === expense.personId)
+                            return (
+                              <div key={expense.id} className="flex items-center justify-between text-xs py-1">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: person?.color }} />
+                                  <span className="text-slate-600">{expense.name}</span>
+                                  {expense.paymentType && (
+                                    <span className="text-slate-400 text-[10px]">
+                                      {expense.paymentType === 'direct_debit' ? 'DD' : expense.paymentType === 'standing_order' ? 'SO' : expense.paymentType === 'manual' ? 'Manual' : 'Card'}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-slate-700 font-medium">
+                                  {formatCurrency(getAmountForPeriod(expense.yearlyAmount))}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+            </div>
+          ) : renderChart(expenseChartData, expenseChartType)}
+        </div>
     </div>
   )
 }

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFirebase } from '../contexts/FirebaseContext'
-import { DollarSign, Receipt, CreditCard, Calculator, Settings, Info, Share2, ArrowLeft, Loader } from 'lucide-react'
+import { LayoutDashboard, Receipt, CreditCard, Calculator, Settings, Share2, ArrowLeft, Loader, Wallet, ChevronRight } from 'lucide-react'
 import Dashboard from './Dashboard'
 import Expenses from './Expenses'
 import Salaries from './Salaries'
@@ -16,7 +16,6 @@ export default function BudgetApp({ onBack }) {
   const [showShareModal, setShowShareModal] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  // Local state that mirrors Firebase data
   const [expenses, setExpenses] = useState([])
   const [categories, setCategories] = useState([])
   const [people, setPeople] = useState([])
@@ -25,7 +24,6 @@ export default function BudgetApp({ onBack }) {
   const [lastTransfers, setLastTransfers] = useState({})
   const [staticAmounts, setStaticAmounts] = useState([])
 
-  // Load data from Firebase budget
   useEffect(() => {
     if (budget) {
       setExpenses(budget.expenses || [])
@@ -38,10 +36,9 @@ export default function BudgetApp({ onBack }) {
     }
   }, [budget])
 
-  // Save data to Firebase
   const saveToFirebase = async (field, data) => {
     if (!budgetId || !budgetOwnerId) return
-    
+
     setSaving(true)
     try {
       await updateDoc(doc(db, 'users', budgetOwnerId, 'budgets', budgetId), {
@@ -55,7 +52,6 @@ export default function BudgetApp({ onBack }) {
     }
   }
 
-  // Wrapper functions to update local state and Firebase
   const updateExpenses = (newExpenses) => {
     setExpenses(newExpenses)
     saveToFirebase('expenses', newExpenses)
@@ -92,86 +88,86 @@ export default function BudgetApp({ onBack }) {
   }
 
   const tabs = [
-    { id: 'dashboard', name: 'Dashboard', icon: DollarSign },
+    { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
     { id: 'expenses', name: 'Expenses', icon: Receipt },
-    { id: 'salaries', name: 'Salaries', icon: CreditCard },
-    { id: 'allocation', name: 'Bill Allocation', icon: Calculator },
+    { id: 'salaries', name: 'Income', icon: CreditCard },
+    { id: 'allocation', name: 'Bills', icon: Calculator },
     { id: 'settings', name: 'Settings', icon: Settings }
   ]
 
   if (budgetLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
-          <Loader className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading budget...</p>
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-brand-100 rounded-2xl mb-4">
+            <Loader className="h-8 w-8 animate-spin text-brand-600" />
+          </div>
+          <p className="text-slate-500 font-medium">Loading budget...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-white shadow-sm border-b">
+    <div className="min-h-screen bg-slate-50">
+      {/* Top header bar */}
+      <div className="bg-gradient-brand shadow-lg">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-4">
+          <div className="flex items-center justify-between h-14">
+            <div className="flex items-center gap-3">
               <button
                 onClick={onBack}
-                className="text-gray-500 hover:text-gray-700"
+                className="p-1.5 hover:bg-white/10 rounded-lg transition-colors text-white/80 hover:text-white"
               >
                 <ArrowLeft className="h-5 w-5" />
               </button>
-              <h1 className="text-2xl font-bold text-gray-900">{budget?.info?.name || 'Budget Tracker'}</h1>
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 bg-white/20 rounded-lg">
+                  <Wallet className="h-4 w-4 text-white" />
+                </div>
+                <h1 className="text-lg font-semibold text-white truncate max-w-[200px] sm:max-w-none">
+                  {budget?.info?.name || 'Budget Tracker'}
+                </h1>
+              </div>
               {saving && (
-                <div className="flex items-center gap-2 text-sm text-gray-500">
-                  <Loader className="h-4 w-4 animate-spin" />
+                <div className="flex items-center gap-1.5 text-xs text-white/60">
+                  <Loader className="h-3 w-3 animate-spin" />
                   Saving...
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowShareModal(true)}
-                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-              >
-                <Share2 className="h-4 w-4" />
-                <span className="hidden sm:inline">Share</span>
-              </button>
-              <div className="relative group">
-                <Info className="h-5 w-5 text-gray-400 hover:text-gray-600 cursor-help" />
-                <div className="absolute right-0 top-8 w-64 p-3 bg-gray-900 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                  Track expenses, manage salaries, and allocate bills between multiple people.
-                </div>
-              </div>
-            </div>
+            <button
+              onClick={() => setShowShareModal(true)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-white/15 hover:bg-white/25 rounded-xl text-white text-sm transition-colors"
+            >
+              <Share2 className="h-4 w-4" />
+              <span className="hidden sm:inline">Share</span>
+            </button>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8 overflow-x-auto">
+      {/* Tab navigation - desktop only (mobile uses bottom nav) */}
+      <div className="hidden sm:block bg-white border-b border-slate-100 shadow-sm sticky top-0 z-30">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <nav className="flex gap-1 overflow-x-auto py-2 scrollbar-hide">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`
-                  flex items-center gap-2 py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap
-                  ${activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }
-                `}
+                className={activeTab === tab.id ? 'nav-tab-active' : 'nav-tab-inactive'}
               >
-                <tab.icon className="h-5 w-5" />
-                {tab.name}
+                <tab.icon className="h-4 w-4" />
+                <span>{tab.name}</span>
               </button>
             ))}
           </nav>
         </div>
+      </div>
 
-        <div className="py-6">
+      {/* Content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="animate-fade-in">
           {activeTab === 'dashboard' && (
             <Dashboard
               expenses={expenses}
@@ -208,6 +204,7 @@ export default function BudgetApp({ onBack }) {
               people={people}
               categories={categories}
               settings={settings}
+              setSettings={updateSettings}
               lastTransfers={lastTransfers}
               setLastTransfers={updateLastTransfers}
               staticAmounts={staticAmounts}
@@ -225,6 +222,29 @@ export default function BudgetApp({ onBack }) {
           )}
         </div>
       </div>
+
+      {/* Mobile bottom nav */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 shadow-lg sm:hidden z-40">
+        <nav className="flex justify-around py-2 px-2">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all ${
+                activeTab === tab.id
+                  ? 'text-brand-600'
+                  : 'text-slate-400'
+              }`}
+            >
+              <tab.icon className="h-5 w-5" />
+              <span className="text-[10px] font-medium">{tab.name}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* Bottom padding for mobile nav */}
+      <div className="h-20 sm:hidden" />
 
       {showShareModal && (
         <ShareBudgetModal

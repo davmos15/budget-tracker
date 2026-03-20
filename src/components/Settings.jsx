@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Save, Info, Globe, Calendar, RefreshCw, User, Share2, Trash2, AlertTriangle, Users, Shield, UserMinus } from 'lucide-react'
+import { Save, Globe, Calendar, RefreshCw, User, Share2, Trash2, AlertTriangle, Users, Shield, UserMinus, Check, X } from 'lucide-react'
 import { useFirebase } from '../contexts/FirebaseContext'
 import { auth, db } from '../firebase'
 import { deleteUser } from 'firebase/auth'
@@ -41,14 +41,17 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
   const weekNumbers = ['1st', '2nd', '3rd', '4th', 'Last']
 
   const currencies = [
-    { value: '$', label: '$' },
-    { value: '€', label: '€' },
-    { value: '£', label: '£' },
-    { value: '¥', label: '¥' },
-    { value: '₹', label: '₹' },
-    { value: '₽', label: '₽' },
-    { value: 'R', label: 'R' },
-    { value: '₩', label: '₩' }
+    { value: '$', label: 'USD ($)' },
+    { value: '€', label: 'EUR' },
+    { value: '£', label: 'GBP' },
+    { value: '¥', label: 'JPY' },
+    { value: '₹', label: 'INR' },
+    { value: '₽', label: 'RUB' },
+    { value: 'R', label: 'ZAR (R)' },
+    { value: '₩', label: 'KRW' },
+    { value: '$', label: 'AUD ($)' },
+    { value: 'NZ$', label: 'NZD (NZ$)' },
+    { value: 'C$', label: 'CAD (C$)' }
   ]
 
   const initializePersonSettings = (personId) => {
@@ -96,10 +99,8 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
     return dateFormat ? dateFormat.example : new Date().toLocaleDateString()
   }
 
-  // Check if current user is admin
   const isAdmin = budget?.info?.admins?.includes(user.uid) || budget?.info?.createdBy === user.uid
 
-  // Load budget users
   useEffect(() => {
     if (showManageUsers && budget?.info?.members) {
       loadBudgetUsers()
@@ -120,8 +121,7 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
           isCreator: budget.info.createdBy === userId
         }
       })
-      const users = await Promise.all(userPromises)
-      setBudgetUsers(users)
+      setBudgetUsers(await Promise.all(userPromises))
     } catch (error) {
       console.error('Error loading users:', error)
     }
@@ -130,27 +130,19 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
 
   const removeUserFromBudget = async (userId) => {
     if (!isAdmin || userId === user.uid || !budgetOwnerId) return
-    
     try {
-      // Remove from budget members
       await updateDoc(doc(db, 'users', budgetOwnerId, 'budgets', budgetId), {
         'info.members': arrayRemove(userId),
         'info.admins': arrayRemove(userId)
       })
-      
-      // Remove from user's sharedBudgets
       const userDoc = await getDoc(doc(db, 'users', userId))
       if (userDoc.exists()) {
         const userData = userDoc.data()
         const updatedSharedBudgets = (userData.sharedBudgets || []).filter(
           sb => !(sb.budgetId === budgetId && sb.ownerId === budgetOwnerId)
         )
-        await updateDoc(doc(db, 'users', userId), {
-          sharedBudgets: updatedSharedBudgets
-        })
+        await updateDoc(doc(db, 'users', userId), { sharedBudgets: updatedSharedBudgets })
       }
-      
-      // Reload users
       loadBudgetUsers()
     } catch (error) {
       console.error('Error removing user:', error)
@@ -159,10 +151,8 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
 
   const toggleAdminStatus = async (userId) => {
     if (!isAdmin || userId === budget.info.createdBy || !budgetOwnerId) return
-    
     try {
       const isUserAdmin = budget.info.admins?.includes(userId)
-      
       if (isUserAdmin) {
         await updateDoc(doc(db, 'users', budgetOwnerId, 'budgets', budgetId), {
           'info.admins': arrayRemove(userId)
@@ -172,8 +162,6 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
           'info.admins': arrayUnion(userId)
         })
       }
-      
-      // Reload the budget to get updated admin list
       window.location.reload()
     } catch (error) {
       console.error('Error updating admin status:', error)
@@ -183,21 +171,14 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
   const handleDeleteAccount = async () => {
     setDeleteLoading(true)
     setDeleteError('')
-    
     try {
-      // Get all user's budgets
       const userDoc = await getDoc(doc(db, 'users', user.uid))
       const userData = userDoc.data()
-      
-      // Delete user's own budgets
       const ownBudgetsRef = collection(db, 'users', user.uid, 'budgets')
       const ownBudgetsSnapshot = await getDocs(ownBudgetsRef)
-      
       for (const budgetDoc of ownBudgetsSnapshot.docs) {
         await deleteDoc(budgetDoc.ref)
       }
-      
-      // Remove user from shared budgets
       if (userData?.sharedBudgets?.length > 0) {
         for (const sharedBudget of userData.sharedBudgets) {
           try {
@@ -210,14 +191,8 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
           }
         }
       }
-      
-      // Delete user document
       await deleteDoc(doc(db, 'users', user.uid))
-      
-      // Delete Firebase Auth account
       await deleteUser(auth.currentUser)
-      
-      // The auth state listener will handle the redirect
     } catch (error) {
       console.error('Error deleting account:', error)
       if (error.code === 'auth/requires-recent-login') {
@@ -229,334 +204,260 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
     }
   }
 
+  const getOrdinalSuffix = (n) => {
+    if (n === 1) return 'st'
+    if (n === 2) return 'nd'
+    if (n === 3) return 'rd'
+    return 'th'
+  }
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div className="bg-white rounded-lg shadow p-4 md:p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">Settings</h2>
-          {showSaved && (
-            <div className="text-sm text-green-600 flex items-center gap-2">
+    <div className="max-w-3xl mx-auto space-y-6">
+      {/* Save bar */}
+      {hasChanges && (
+        <div className="sticky top-16 z-20 animate-slide-down">
+          <div className="card p-3 flex items-center justify-between bg-brand-50 border-brand-200">
+            <p className="text-sm text-brand-700 font-medium">You have unsaved changes</p>
+            <button onClick={handleSave} className="btn-primary text-sm py-1.5">
               <Save className="h-4 w-4" />
-              Settings saved successfully
-            </div>
-          )}
+              Save Settings
+            </button>
+          </div>
         </div>
+      )}
+
+      {showSaved && (
+        <div className="alert alert-success animate-slide-down">
+          <Check className="h-4 w-4" />
+          <span className="text-sm font-medium">Settings saved successfully</span>
+        </div>
+      )}
+
+      {/* General Settings */}
+      <div className="card p-6">
+        <h2 className="text-xl font-bold text-slate-900 mb-6">General Settings</h2>
 
         <div className="space-y-6">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <Globe className="h-5 w-5 text-gray-400" />
-              <label className="text-sm font-medium text-gray-700">Currency Symbol</label>
-              <div className="relative group">
-                <Info className="h-4 w-4 text-gray-400 hover:text-gray-600 cursor-help" />
-                <div className="absolute left-0 top-6 w-48 p-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                  Select the currency symbol to display throughout the app
-                </div>
-              </div>
+              <Globe className="h-4 w-4 text-slate-400" />
+              <label className="input-label mb-0">Currency Symbol</label>
             </div>
             <select
               value={localSettings.currency}
               onChange={(e) => setLocalSettings({ ...localSettings, currency: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="input"
             >
-              {currencies.map(currency => (
-                <option key={currency.value} value={currency.value}>
-                  {currency.label}
-                </option>
-              ))}
+              {currencies.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
           </div>
 
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <Calendar className="h-5 w-5 text-gray-400" />
-              <label className="text-sm font-medium text-gray-700">Date Format</label>
-              <div className="relative group">
-                <Info className="h-4 w-4 text-gray-400 hover:text-gray-600 cursor-help" />
-                <div className="absolute left-0 top-6 w-48 p-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                  Choose how dates are displayed in the application
-                </div>
-              </div>
+              <Calendar className="h-4 w-4 text-slate-400" />
+              <label className="input-label mb-0">Date Format</label>
             </div>
             <select
               value={localSettings.dateFormat}
               onChange={(e) => setLocalSettings({ ...localSettings, dateFormat: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="input"
             >
-              {dateFormats.map(format => (
-                <option key={format.value} value={format.value}>
-                  {format.label}
-                </option>
-              ))}
+              {dateFormats.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
             </select>
-            <p className="text-xs text-gray-500 mt-1">
-              Example: {getDateFormatExample(localSettings.dateFormat)}
+            <p className="text-xs text-slate-400 mt-1.5">
+              Preview: {getDateFormatExample(localSettings.dateFormat)}
             </p>
           </div>
 
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <RefreshCw className="h-5 w-5 text-gray-400" />
-              <label className="text-sm font-medium text-gray-700">Default Transfer Frequency</label>
-              <div className="relative group">
-                <Info className="h-4 w-4 text-gray-400 hover:text-gray-600 cursor-help" />
-                <div className="absolute left-0 top-6 w-48 p-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                  Default frequency for new people. Individual settings below override this.
-                </div>
-              </div>
+              <RefreshCw className="h-4 w-4 text-slate-400" />
+              <label className="input-label mb-0">Default Transfer Frequency</label>
             </div>
             <select
               value={localSettings.transferFrequency}
               onChange={(e) => setLocalSettings({ ...localSettings, transferFrequency: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="input"
             >
-              {transferFrequencies.map(freq => (
-                <option key={freq.value} value={freq.value}>
-                  {freq.label}
-                </option>
-              ))}
+              {transferFrequencies.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
             </select>
           </div>
         </div>
+      </div>
 
-        <div className="mt-8 pt-6 border-t">
-          <div className="flex items-center gap-2 mb-4">
-            <User className="h-5 w-5 text-gray-400" />
-            <h3 className="text-lg font-semibold">Transfer Settings by Person</h3>
-          </div>
-          
-          <div className="space-y-6">
-            {people.map(person => {
-              if (!localSettings.peopleTransferSettings[person.id]) {
-                initializePersonSettings(person.id)
-              }
-              const personSettings = localSettings.peopleTransferSettings[person.id]
-              
-              return (
-                <div key={person.id} className="bg-gray-50 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="w-4 h-4 rounded-full" style={{ backgroundColor: person.color }} />
-                    <h4 className="font-medium">{person.name}</h4>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Frequency</label>
-                      <select
-                        value={personSettings?.frequency || 'fortnightly'}
-                        onChange={(e) => updatePersonTransferSettings(person.id, 'frequency', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        {transferFrequencies.map(freq => (
-                          <option key={freq.value} value={freq.value}>
-                            {freq.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Transfer On</label>
-                      <select
-                        value={personSettings?.type || 'dayOfWeek'}
-                        onChange={(e) => updatePersonTransferSettings(person.id, 'type', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="dayOfWeek">Specific Day of Week</option>
-                        <option value="dayOfMonth">Specific Day of Month</option>
-                        <option value="weekDayOfMonth">Specific Week & Day of Month</option>
-                      </select>
-                    </div>
-
-                    {personSettings?.type === 'dayOfWeek' && (
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Day of Week</label>
-                        <select
-                          value={personSettings?.dayOfWeek || 'Friday'}
-                          onChange={(e) => updatePersonTransferSettings(person.id, 'dayOfWeek', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          {weekDays.map(day => (
-                            <option key={day} value={day}>{day}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    {personSettings?.type === 'dayOfMonth' && (
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Day of Month (1-28)</label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="28"
-                          value={personSettings?.dayOfMonth || 1}
-                          onChange={(e) => updatePersonTransferSettings(person.id, 'dayOfMonth', parseInt(e.target.value))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                    )}
-
-                    {personSettings?.type === 'weekDayOfMonth' && (
-                      <>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Week</label>
-                          <select
-                            value={personSettings?.weekNumber || '1st'}
-                            onChange={(e) => updatePersonTransferSettings(person.id, 'weekNumber', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          >
-                            {weekNumbers.map(week => (
-                              <option key={week} value={week}>{week}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Day</label>
-                          <select
-                            value={personSettings?.weekDayOfMonth || 'Monday'}
-                            onChange={(e) => updatePersonTransferSettings(person.id, 'weekDayOfMonth', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          >
-                            {weekDays.map(day => (
-                              <option key={day} value={day}>{day}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  <p className="text-xs text-gray-500 mt-2">
-                    Example: {personSettings?.frequency} on{' '}
-                    {personSettings?.type === 'dayOfWeek' && `every ${personSettings?.dayOfWeek}`}
-                    {personSettings?.type === 'dayOfMonth' && `the ${personSettings?.dayOfMonth}${personSettings?.dayOfMonth === 1 ? 'st' : personSettings?.dayOfMonth === 2 ? 'nd' : personSettings?.dayOfMonth === 3 ? 'rd' : 'th'} of each month`}
-                    {personSettings?.type === 'weekDayOfMonth' && `the ${personSettings?.weekNumber} ${personSettings?.weekDayOfMonth} of each month`}
-                  </p>
-                </div>
-              )
-            })}
-          </div>
+      {/* Transfer Settings by Person */}
+      <div className="card p-6">
+        <div className="flex items-center gap-2 mb-6">
+          <User className="h-5 w-5 text-slate-400" />
+          <h3 className="text-lg font-semibold text-slate-900">Transfer Schedule by Person</h3>
         </div>
 
-        <div className="mt-8 pt-6 border-t">
-          <button
-            onClick={handleSave}
-            disabled={!hasChanges}
-            className={`w-full py-2 rounded-lg transition-colors flex items-center justify-center gap-2 ${
-              hasChanges
-                ? 'bg-blue-600 text-white hover:bg-blue-700'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-            }`}
-          >
-            <Save className="h-4 w-4" />
-            Save Settings
-          </button>
+        <div className="space-y-4">
+          {people.map(person => {
+            if (!localSettings.peopleTransferSettings[person.id]) {
+              initializePersonSettings(person.id)
+            }
+            const ps = localSettings.peopleTransferSettings[person.id]
+            if (!ps) return null
+
+            return (
+              <div key={person.id} className="bg-slate-50 rounded-xl p-4">
+                <div className="flex items-center gap-2.5 mb-4">
+                  <div className="w-6 h-6 rounded-full" style={{ backgroundColor: person.color }} />
+                  <h4 className="font-medium text-slate-900">{person.name}</h4>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="input-label text-xs">Frequency</label>
+                    <select
+                      value={ps.frequency || 'fortnightly'}
+                      onChange={(e) => updatePersonTransferSettings(person.id, 'frequency', e.target.value)}
+                      className="input text-sm py-2"
+                    >
+                      {transferFrequencies.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="input-label text-xs">Transfer On</label>
+                    <select
+                      value={ps.type || 'dayOfWeek'}
+                      onChange={(e) => updatePersonTransferSettings(person.id, 'type', e.target.value)}
+                      className="input text-sm py-2"
+                    >
+                      <option value="dayOfWeek">Day of Week</option>
+                      <option value="dayOfMonth">Day of Month</option>
+                      <option value="weekDayOfMonth">Week & Day of Month</option>
+                    </select>
+                  </div>
+
+                  {ps.type === 'dayOfWeek' && (
+                    <div className="md:col-span-2">
+                      <label className="input-label text-xs">Day</label>
+                      <select
+                        value={ps.dayOfWeek || 'Friday'}
+                        onChange={(e) => updatePersonTransferSettings(person.id, 'dayOfWeek', e.target.value)}
+                        className="input text-sm py-2"
+                      >
+                        {weekDays.map(d => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                    </div>
+                  )}
+
+                  {ps.type === 'dayOfMonth' && (
+                    <div className="md:col-span-2">
+                      <label className="input-label text-xs">Day of Month (1-28)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="28"
+                        value={ps.dayOfMonth || 1}
+                        onChange={(e) => updatePersonTransferSettings(person.id, 'dayOfMonth', parseInt(e.target.value))}
+                        className="input text-sm py-2"
+                      />
+                    </div>
+                  )}
+
+                  {ps.type === 'weekDayOfMonth' && (
+                    <>
+                      <div>
+                        <label className="input-label text-xs">Week</label>
+                        <select
+                          value={ps.weekNumber || '1st'}
+                          onChange={(e) => updatePersonTransferSettings(person.id, 'weekNumber', e.target.value)}
+                          className="input text-sm py-2"
+                        >
+                          {weekNumbers.map(w => <option key={w} value={w}>{w}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="input-label text-xs">Day</label>
+                        <select
+                          value={ps.weekDayOfMonth || 'Monday'}
+                          onChange={(e) => updatePersonTransferSettings(person.id, 'weekDayOfMonth', e.target.value)}
+                          className="input text-sm py-2"
+                        >
+                          {weekDays.map(d => <option key={d} value={d}>{d}</option>)}
+                        </select>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <p className="text-xs text-slate-400 mt-3">
+                  {ps.frequency} on{' '}
+                  {ps.type === 'dayOfWeek' && `every ${ps.dayOfWeek}`}
+                  {ps.type === 'dayOfMonth' && `the ${ps.dayOfMonth}${getOrdinalSuffix(ps.dayOfMonth)} of each month`}
+                  {ps.type === 'weekDayOfMonth' && `the ${ps.weekNumber} ${ps.weekDayOfMonth} of each month`}
+                </p>
+              </div>
+            )
+          })}
         </div>
       </div>
 
+      {/* Budget Sharing */}
       {budgetCode && (
-        <div className="bg-white rounded-lg shadow p-4 md:p-6">
+        <div className="card p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Budget Sharing</h3>
-            <button
-              onClick={() => setShowShareModal(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-            >
+            <h3 className="text-lg font-semibold text-slate-900">Budget Sharing</h3>
+            <button onClick={() => setShowShareModal(true)} className="btn-primary text-sm">
               <Share2 className="h-4 w-4" />
-              Share Budget
+              Share
             </button>
           </div>
-          
-          <div className="bg-gray-50 rounded-lg p-4">
-            <p className="text-sm text-gray-600 mb-2">Share this code with others to give them access to this budget:</p>
-            <div className="flex items-center gap-4">
-              <div className="text-2xl font-mono font-bold text-blue-600 bg-blue-50 px-4 py-2 rounded">
-                {budgetCode}
-              </div>
-              <div className="text-sm text-gray-500">
-                <p>Budget: {budgetName}</p>
-                <p className="text-xs mt-1">Anyone with this code can join and edit this budget</p>
-              </div>
+          <div className="bg-brand-50 rounded-xl p-4 flex items-center gap-4">
+            <div className="text-2xl font-mono font-bold text-brand-600 bg-white px-5 py-2.5 rounded-xl shadow-sm tracking-widest">
+              {budgetCode}
+            </div>
+            <div>
+              <p className="text-sm font-medium text-brand-800">{budgetName}</p>
+              <p className="text-xs text-brand-600 mt-0.5">Anyone with this code can join</p>
             </div>
           </div>
         </div>
       )}
 
+      {/* Manage Users */}
       {isAdmin && budgetCode && (
-        <div className="bg-white rounded-lg shadow p-4 md:p-6">
+        <div className="card p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-              <Shield className="h-5 w-5 text-gray-400" />
-              Manage Users
-            </h3>
-            <button
-              onClick={() => setShowManageUsers(true)}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
-            >
+            <div className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-slate-400" />
+              <h3 className="text-lg font-semibold text-slate-900">Manage Users</h3>
+            </div>
+            <button onClick={() => setShowManageUsers(true)} className="btn-secondary text-sm">
               <Users className="h-4 w-4" />
               View Users
             </button>
           </div>
-          
-          <div className="text-sm text-gray-600">
-            <p>As an admin, you can:</p>
-            <ul className="list-disc list-inside mt-2 space-y-1 ml-2">
-              <li>Remove users from the budget</li>
-              <li>Promote users to admin role</li>
-              <li>View all budget members</li>
-            </ul>
-          </div>
+          <p className="text-sm text-slate-500">Remove users, promote to admin, or view all budget members.</p>
         </div>
       )}
 
-      <div className="bg-blue-50 rounded-lg p-4 md:p-6">
-        <h3 className="font-semibold text-blue-900 mb-2">About Budget Tracker</h3>
-        <p className="text-sm text-blue-800 mb-4">
-          This budget tracking application helps you manage expenses, track income from multiple sources, 
-          and calculate fair bill allocations between multiple people.
-        </p>
-        
-        <div className="space-y-2 text-sm text-blue-700">
-          <p className="flex items-center gap-2">
-            <span className="font-medium">Version:</span> 1.0.0
-          </p>
-          <p className="flex items-center gap-2">
-            <span className="font-medium">Features:</span> Expense tracking, Income management, Bill allocation, Multi-person support
-          </p>
+      {/* Danger Zone */}
+      <div className="card border-rose-200 p-6">
+        <div className="flex items-center gap-2 mb-3">
+          <AlertTriangle className="h-5 w-5 text-rose-500" />
+          <h3 className="font-semibold text-rose-900">Danger Zone</h3>
         </div>
-      </div>
-
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4 md:p-6">
-        <h3 className="font-semibold text-red-900 mb-2 flex items-center gap-2">
-          <AlertTriangle className="h-5 w-5" />
-          Danger Zone
-        </h3>
-        <p className="text-sm text-red-800 mb-4">
-          Once you delete your account, there is no going back. Please be certain.
+        <p className="text-sm text-rose-700 mb-4">
+          Once you delete your account, there is no going back.
         </p>
-        <button
-          onClick={() => setShowDeleteModal(true)}
-          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
-        >
+        <button onClick={() => setShowDeleteModal(true)} className="btn-danger text-sm">
           <Trash2 className="h-4 w-4" />
           Delete Account
         </button>
       </div>
 
       {showShareModal && (
-        <ShareBudgetModal
-          budgetCode={budgetCode}
-          onClose={() => setShowShareModal(false)}
-        />
+        <ShareBudgetModal budgetCode={budgetCode} onClose={() => setShowShareModal(false)} />
       )}
 
       {showDeleteModal && (
         <DeleteAccountModal
-          onClose={() => {
-            setShowDeleteModal(false)
-            setDeleteError('')
-          }}
+          onClose={() => { setShowDeleteModal(false); setDeleteError('') }}
           onConfirm={handleDeleteAccount}
           loading={deleteLoading}
           error={deleteError}
@@ -583,41 +484,34 @@ function DeleteAccountModal({ onClose, onConfirm, loading, error }) {
   const canDelete = confirmText === 'DELETE'
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-md w-full p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 bg-red-100 rounded-full">
-            <AlertTriangle className="h-6 w-6 text-red-600" />
+    <div className="modal-overlay">
+      <div className="modal-content">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
+          <div className="p-2 bg-rose-100 rounded-xl">
+            <AlertTriangle className="h-5 w-5 text-rose-600" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">Delete Account</h3>
+          <h3 className="text-lg font-semibold text-slate-900">Delete Account</h3>
         </div>
-        
-        <div className="space-y-4">
-          <div className="text-sm text-gray-600 space-y-2">
-            <p>This action will permanently delete:</p>
-            <ul className="list-disc list-inside space-y-1 ml-2">
+
+        <div className="p-6 space-y-4">
+          <div className="text-sm text-slate-600 space-y-2">
+            <p>This will permanently delete:</p>
+            <ul className="list-disc list-inside space-y-1 ml-2 text-slate-500">
               <li>Your account and all personal data</li>
               <li>All budgets where you are the sole owner</li>
               <li>Your access to shared budgets</li>
             </ul>
-            <p className="font-semibold text-red-600 mt-3">This action cannot be undone!</p>
           </div>
 
-          {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-              {error}
-            </div>
-          )}
+          {error && <div className="alert alert-danger"><span className="text-sm">{error}</span></div>}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Type DELETE to confirm
-            </label>
+            <label className="input-label">Type DELETE to confirm</label>
             <input
               type="text"
               value={confirmText}
               onChange={(e) => setConfirmText(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+              className="input"
               placeholder="Type DELETE here"
             />
           </div>
@@ -626,11 +520,7 @@ function DeleteAccountModal({ onClose, onConfirm, loading, error }) {
             <button
               onClick={onConfirm}
               disabled={!canDelete || loading}
-              className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 ${
-                canDelete && !loading
-                  ? 'bg-red-600 text-white hover:bg-red-700'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-              }`}
+              className="btn-danger flex-1"
             >
               {loading ? (
                 <>
@@ -644,11 +534,7 @@ function DeleteAccountModal({ onClose, onConfirm, loading, error }) {
                 </>
               )}
             </button>
-            <button
-              onClick={onClose}
-              disabled={loading}
-              className="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300 transition-colors disabled:bg-gray-100 disabled:text-gray-400"
-            >
+            <button onClick={onClose} disabled={loading} className="btn-secondary flex-1">
               Cancel
             </button>
           </div>
@@ -662,86 +548,73 @@ function ManageUsersModal({ onClose, users, loading, currentUserId, onRemoveUser
   const [confirmRemove, setConfirmRemove] = useState(null)
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-2xl w-full p-6 max-h-[80vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            Budget Members
-          </h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+    <div className="modal-overlay">
+      <div className="modal-content max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-slate-400" />
+            <h3 className="text-lg font-semibold text-slate-900">Budget Members</h3>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
             <div className="text-center py-8">
-              <div className="h-8 w-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-              <p className="text-gray-600">Loading users...</p>
+              <div className="h-8 w-8 border-2 border-brand-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+              <p className="text-slate-500">Loading users...</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {users.map((user) => (
-                <div key={user.uid} className="bg-gray-50 rounded-lg p-4">
+              {users.map((u) => (
+                <div key={u.uid} className="bg-slate-50 rounded-xl p-4">
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="flex items-center gap-2">
-                        <p className="font-medium text-gray-900">{user.name}</p>
-                        {user.isCreator && (
-                          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Creator</span>
-                        )}
-                        {user.isAdmin && !user.isCreator && (
-                          <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">Admin</span>
-                        )}
-                        {user.uid === currentUserId && (
-                          <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">You</span>
-                        )}
+                        <p className="font-medium text-slate-900">{u.name}</p>
+                        {u.isCreator && <span className="badge badge-info">Creator</span>}
+                        {u.isAdmin && !u.isCreator && <span className="badge badge-brand">Admin</span>}
+                        {u.uid === currentUserId && <span className="badge badge-success">You</span>}
                       </div>
-                      <p className="text-sm text-gray-600">{user.email}</p>
+                      <p className="text-sm text-slate-500 mt-0.5">{u.email}</p>
                     </div>
-                    
-                    {isAdmin && user.uid !== currentUserId && (
+
+                    {isAdmin && u.uid !== currentUserId && (
                       <div className="flex items-center gap-2">
-                        {!user.isCreator && (
+                        {!u.isCreator && (
                           <button
-                            onClick={() => onToggleAdmin(user.uid)}
-                            className={`px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1 ${
-                              user.isAdmin
-                                ? 'bg-purple-100 text-purple-700 hover:bg-purple-200'
-                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                            onClick={() => onToggleAdmin(u.uid)}
+                            className={`btn text-xs px-3 py-1.5 ${
+                              u.isAdmin ? 'bg-brand-50 text-brand-700 hover:bg-brand-100' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                             }`}
                           >
                             <Shield className="h-3 w-3" />
-                            {user.isAdmin ? 'Remove Admin' : 'Make Admin'}
+                            {u.isAdmin ? 'Remove Admin' : 'Make Admin'}
                           </button>
                         )}
-                        
-                        {confirmRemove === user.uid ? (
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-red-600">Remove?</span>
+
+                        {confirmRemove === u.uid ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-rose-600">Sure?</span>
                             <button
-                              onClick={() => {
-                                onRemoveUser(user.uid)
-                                setConfirmRemove(null)
-                              }}
-                              className="px-2 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                              onClick={() => { onRemoveUser(u.uid); setConfirmRemove(null) }}
+                              className="btn-danger text-xs px-2 py-1"
                             >
                               Yes
                             </button>
                             <button
                               onClick={() => setConfirmRemove(null)}
-                              className="px-2 py-1 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
+                              className="btn-secondary text-xs px-2 py-1"
                             >
                               No
                             </button>
                           </div>
                         ) : (
                           <button
-                            onClick={() => setConfirmRemove(user.uid)}
-                            className="px-3 py-1.5 bg-red-100 text-red-700 text-sm rounded-lg hover:bg-red-200 transition-colors flex items-center gap-1"
+                            onClick={() => setConfirmRemove(u.uid)}
+                            className="btn text-xs px-3 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100"
                           >
                             <UserMinus className="h-3 w-3" />
                             Remove
@@ -756,13 +629,8 @@ function ManageUsersModal({ onClose, users, loading, currentUserId, onRemoveUser
           )}
         </div>
 
-        <div className="mt-4 pt-4 border-t">
-          <button
-            onClick={onClose}
-            className="w-full bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300 transition-colors"
-          >
-            Close
-          </button>
+        <div className="p-4 border-t border-slate-100 flex-shrink-0">
+          <button onClick={onClose} className="btn-secondary w-full">Close</button>
         </div>
       </div>
     </div>

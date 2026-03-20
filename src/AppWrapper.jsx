@@ -4,7 +4,7 @@ import Login from './components/Auth/Login'
 import Signup from './components/Auth/Signup'
 import BudgetSelection from './components/BudgetSelection'
 import BudgetApp from './components/BudgetApp'
-import { Loader } from 'lucide-react'
+import { Loader, Wallet } from 'lucide-react'
 
 export default function AppWrapper() {
   const { user, loading, selectBudget, budgetId, logout } = useFirebase()
@@ -12,16 +12,17 @@ export default function AppWrapper() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
-          <Loader className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading Budget Tracker...</p>
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-brand-100 rounded-2xl mb-4 animate-pulse-soft">
+            <Wallet className="h-8 w-8 text-brand-600" />
+          </div>
+          <p className="text-slate-500 font-medium">Loading Budget Tracker...</p>
         </div>
       </div>
     )
   }
 
-  // Not authenticated - show login/signup
   if (!user) {
     return showLogin ? (
       <Login onSwitchToSignup={() => setShowLogin(false)} />
@@ -30,7 +31,6 @@ export default function AppWrapper() {
     )
   }
 
-  // Authenticated but no budget selected - show budget selection
   if (!budgetId) {
     return (
       <BudgetSelection
@@ -41,10 +41,5 @@ export default function AppWrapper() {
     )
   }
 
-  // Authenticated and budget selected - show main app
-  return (
-    <BudgetApp
-      onBack={() => selectBudget(null)}
-    />
-  )
+  return <BudgetApp onBack={() => selectBudget(null)} />
 }
