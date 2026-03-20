@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Plus, X, CalendarClock, AlertTriangle, CheckCircle2, Clock, CreditCard, ArrowRight, Zap } from 'lucide-react'
+import { Plus, X, CalendarClock, AlertTriangle, CheckCircle2, Clock, CreditCard, ArrowRight, Zap, Edit2 } from 'lucide-react'
 
 export default function BillAllocation({
   expenses,
@@ -15,6 +15,7 @@ export default function BillAllocation({
   setStaticAmounts
 }) {
   const [showAddStatic, setShowAddStatic] = useState(false)
+  const [editingStatic, setEditingStatic] = useState(null)
   const [currentBalance, setCurrentBalance] = useState(settings.billsAccountBalance ?? '')
 
   const handleBalanceChange = (value) => {
@@ -52,38 +53,33 @@ export default function BillAllocation({
     return date
   }
 
-  // Calculate how much needs to be in the bills account for each expense
-  // This is based on how much has accumulated since the last transfer
-  const calculateRequiredInAccount = (expense, personId) => {
-    const lastTransferDate = lastTransfers[personId]
+  // Calculate the required amount for each bill.
+  // Logic: each bill needs its full amount set aside for the upcoming payment.
+  // If we know the next due date and last paid date, we prorate based on
+  // how far through the billing cycle we are. Otherwise, the full amount.
+  const calculateRequiredInAccount = (expense) => {
+    // If we have both lastPaid and nextDueDate, prorate
+    if (expense.lastPaid && expense.nextDueDate) {
+      const lastPaid = new Date(expense.lastPaid)
+      const nextDue = new Date(expense.nextDueDate)
+      const today = new Date()
+      lastPaid.setHours(0, 0, 0, 0)
+      nextDue.setHours(0, 0, 0, 0)
+      today.setHours(0, 0, 0, 0)
 
-    // If no transfer recorded, need the full bill amount
-    if (!lastTransferDate) return expense.amount
+      const totalCycleDays = Math.max(1, (nextDue - lastPaid) / (1000 * 60 * 60 * 24))
+      const daysSinceLastPaid = Math.max(0, (today - lastPaid) / (1000 * 60 * 60 * 24))
 
-    const transferDate = new Date(lastTransferDate)
-    transferDate.setHours(0, 0, 0, 0)
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
+      // If past due date, need the full amount
+      if (today >= nextDue) return expense.amount
 
-    const daysSinceTransfer = Math.max(0, Math.ceil((today - transferDate) / (1000 * 60 * 60 * 24)))
-
-    // Calculate the daily cost of this expense
-    const daysInPeriod = {
-      weekly: 7,
-      fortnightly: 14,
-      monthly: 30.44, // average days in a month
-      quarterly: 91.31,
-      yearly: 365.25
+      // Prorate: what fraction of the cycle has elapsed
+      const fraction = Math.min(daysSinceLastPaid / totalCycleDays, 1)
+      return Math.round(expense.amount * fraction * 100) / 100
     }
 
-    const period = daysInPeriod[expense.frequency] || 30.44
-    const dailyCost = expense.amount / period
-
-    // How much has accumulated since the last transfer
-    const accumulated = dailyCost * daysSinceTransfer
-
-    // Cap at the expense amount (can't owe more than one period)
-    return Math.min(accumulated, expense.amount)
+    // No date info: need the full bill amount
+    return expense.amount
   }
 
   const { totalRequired, byPerson, expenseDetails } = useMemo(() => {
@@ -95,7 +91,7 @@ export default function BillAllocation({
     })
 
     expenses.forEach(expense => {
-      const required = calculateRequiredInAccount(expense, expense.personId)
+      const required = calculateRequiredInAccount(expense)
       expenseDetails.push({
         ...expense,
         requiredAmount: required
@@ -187,12 +183,21 @@ export default function BillAllocation({
   }
 
   const handleAddStaticAmount = (newAmount) => {
-    setStaticAmounts([...staticAmounts, { ...newAmount, id: Date.now() }])
+    if (editingStatic) {
+      setStaticAmounts(staticAmounts.map(item =>
+        item.id === editingStatic.id ? { ...newAmount, id: item.id } : item
+      ))
+      setEditingStatic(null)
+    } else {
+      setStaticAmounts([...staticAmounts, { ...newAmount, id: Date.now() }])
+    }
     setShowAddStatic(false)
   }
 
   const handleDeleteStaticAmount = (id) => {
-    setStaticAmounts(staticAmounts.filter(item => item.id !== id))
+    if (window.confirm('Delete this static amount?')) {
+      setStaticAmounts(staticAmounts.filter(item => item.id !== id))
+    }
   }
 
   const handleRecordTransfer = (personId) => {
@@ -509,7 +514,7 @@ export default function BillAllocation({
             <h3 className="font-semibold text-slate-900">Static Amounts</h3>
             <p className="text-xs text-slate-400 mt-0.5">Fixed amounts that should always be in the bills account</p>
           </div>
-          <button onClick={() => setShowAddStatic(true)} className="btn-primary text-sm">
+          <button onClick={() => { setEditingStatic(null); setShowAddStatic(true) }} className="btn-primary text-sm">
             <Plus className="h-4 w-4" />
             Add
           </button>
@@ -535,13 +540,19 @@ export default function BillAllocation({
                       <span className="text-xs text-slate-400 ml-2">{person?.name}</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-slate-900">{formatCurrency(item.amount)}</span>
+                    <button
+                      onClick={() => { setEditingStatic(item); setShowAddStatic(true) }}
+                      className="p-1 hover:bg-white rounded-lg text-slate-400 hover:text-brand-600 transition-colors"
+                    >
+                      <Edit2 className="h-3.5 w-3.5" />
+                    </button>
                     <button
                       onClick={() => handleDeleteStaticAmount(item.id)}
                       className="p-1 hover:bg-white rounded-lg text-slate-400 hover:text-rose-600 transition-colors"
                     >
-                      <X className="h-4 w-4" />
+                      <X className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </div>
@@ -554,19 +565,20 @@ export default function BillAllocation({
       {showAddStatic && (
         <StaticAmountModal
           people={people}
+          existing={editingStatic}
           onSave={handleAddStaticAmount}
-          onClose={() => setShowAddStatic(false)}
+          onClose={() => { setShowAddStatic(false); setEditingStatic(null) }}
         />
       )}
     </div>
   )
 }
 
-function StaticAmountModal({ people, onSave, onClose }) {
+function StaticAmountModal({ people, existing, onSave, onClose }) {
   const [formData, setFormData] = useState({
-    personId: people[0]?.id || '',
-    description: '',
-    amount: ''
+    personId: existing?.personId || people[0]?.id || '',
+    description: existing?.description || '',
+    amount: existing?.amount || ''
   })
 
   const handleSubmit = (e) => {
@@ -582,7 +594,7 @@ function StaticAmountModal({ people, onSave, onClose }) {
     <div className="modal-overlay">
       <div className="modal-content">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
-          <h3 className="text-lg font-semibold text-slate-900">Add Static Amount</h3>
+          <h3 className="text-lg font-semibold text-slate-900">{existing ? 'Edit' : 'Add'} Static Amount</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
             <X className="h-5 w-5" />
           </button>
@@ -627,7 +639,7 @@ function StaticAmountModal({ people, onSave, onClose }) {
           </div>
 
           <div className="flex gap-3 pt-2">
-            <button type="submit" className="btn-primary flex-1">Add Amount</button>
+            <button type="submit" className="btn-primary flex-1">{existing ? 'Update' : 'Add'} Amount</button>
             <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
           </div>
         </form>
