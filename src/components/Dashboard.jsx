@@ -32,8 +32,10 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
       return acc
     }, {})
 
+    const expenseOnly = expenses.filter(e => (e.itemType || 'expense') === 'expense')
+
     const expensesByCategory = categories.reduce((acc, cat) => {
-      const catExpenses = expenses.filter(e => e.categoryId === cat.id)
+      const catExpenses = expenseOnly.filter(e => e.categoryId === cat.id)
       acc[cat.id] = {
         amount: catExpenses.reduce((sum, e) => sum + calculateYearlyAmount(e.amount, e.frequency), 0),
         count: catExpenses.length
@@ -42,7 +44,7 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
     }, {})
 
     const expensesByCategoryDetailed = categories.reduce((acc, cat) => {
-      acc[cat.id] = expenses.filter(e => e.categoryId === cat.id).map(e => ({
+      acc[cat.id] = expenseOnly.filter(e => e.categoryId === cat.id).map(e => ({
         ...e,
         yearlyAmount: calculateYearlyAmount(e.amount, e.frequency)
       }))

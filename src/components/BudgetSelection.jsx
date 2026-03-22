@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { collection, doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp, query, where, getDocs } from 'firebase/firestore'
+import { collection, doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp, getDocs } from 'firebase/firestore'
 import { db } from '../firebase'
 import { Plus, Share2, LogOut, Loader, FileText, Users, Wallet, ArrowRight, X } from 'lucide-react'
 
@@ -135,6 +135,14 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
         staticAmounts: []
       })
 
+      // Write code lookup doc for join functionality
+      await setDoc(doc(db, 'budgetCodes', budgetCode), {
+        ownerId: user.uid,
+        budgetId: budgetId,
+        name: name,
+        createdAt: serverTimestamp()
+      })
+
       await loadUserBudgets()
       setShowCreateModal(false)
     } catch (error) {
@@ -149,37 +157,33 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
 
   const joinBudget = async (code) => {
     try {
-      let foundBudget = null
-      let ownerUserId = null
+      // Look up budget via the budgetCodes collection
+      const codeDoc = await getDoc(doc(db, 'budgetCodes', code.toUpperCase()))
 
-      const usersSnapshot = await getDocs(collection(db, 'users'))
-
-      for (const userDoc of usersSnapshot.docs) {
-        const userBudgetsRef = collection(db, 'users', userDoc.id, 'budgets')
-        const budgetsQuery = query(userBudgetsRef, where('info.code', '==', code.toUpperCase()))
-        const budgetsSnapshot = await getDocs(budgetsQuery)
-
-        if (!budgetsSnapshot.empty) {
-          foundBudget = budgetsSnapshot.docs[0]
-          ownerUserId = userDoc.id
-          break
-        }
-      }
-
-      if (!foundBudget) {
+      if (!codeDoc.exists()) {
         setError('Invalid budget code')
         return
       }
 
-      const budgetId = foundBudget.id
-      const budgetData = foundBudget.data()
+      const { ownerId: ownerUserId, budgetId } = codeDoc.data()
+
+      // Verify the budget still exists
+      const budgetRef = doc(db, 'users', ownerUserId, 'budgets', budgetId)
+      const budgetDoc = await getDoc(budgetRef)
+
+      if (!budgetDoc.exists()) {
+        setError('This budget no longer exists')
+        return
+      }
+
+      const budgetData = budgetDoc.data()
 
       if (budgetData.info.members.includes(user.uid)) {
         setError('You are already a member of this budget')
         return
       }
 
-      await updateDoc(doc(db, 'users', ownerUserId, 'budgets', budgetId), {
+      await updateDoc(budgetRef, {
         'info.members': arrayUnion(user.uid)
       })
 

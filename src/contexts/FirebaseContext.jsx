@@ -50,9 +50,14 @@ export function FirebaseProvider({ children }) {
     return unsubscribe
   }, [budgetId, budgetOwnerId, user])
 
-  const selectBudget = ({budgetId, ownerId}) => {
-    setBudgetId(budgetId)
-    setBudgetOwnerId(ownerId)
+  const selectBudget = (selection) => {
+    if (selection) {
+      setBudgetId(selection.budgetId)
+      setBudgetOwnerId(selection.ownerId)
+    } else {
+      setBudgetId(null)
+      setBudgetOwnerId(null)
+    }
   }
 
   const logout = async () => {

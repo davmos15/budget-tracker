@@ -54,24 +54,25 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
     { value: 'C$', label: 'CAD (C$)' }
   ]
 
-  const initializePersonSettings = (personId) => {
-    if (!localSettings.peopleTransferSettings[personId]) {
-      setLocalSettings({
-        ...localSettings,
-        peopleTransferSettings: {
-          ...localSettings.peopleTransferSettings,
-          [personId]: {
-            frequency: 'fortnightly',
-            type: 'dayOfWeek',
-            dayOfWeek: 'Friday',
-            dayOfMonth: 1,
-            weekNumber: '1st',
-            weekDayOfMonth: 'Monday'
-          }
+  // Initialize transfer settings for any people that don't have them yet
+  useEffect(() => {
+    const pts = localSettings.peopleTransferSettings || {}
+    const missing = people.filter(p => !pts[p.id])
+    if (missing.length > 0) {
+      const updated = { ...pts }
+      missing.forEach(p => {
+        updated[p.id] = {
+          frequency: 'fortnightly',
+          type: 'dayOfWeek',
+          dayOfWeek: 'Friday',
+          dayOfMonth: 1,
+          weekNumber: '1st',
+          weekDayOfMonth: 'Monday'
         }
       })
+      setLocalSettings(prev => ({ ...prev, peopleTransferSettings: updated }))
     }
-  }
+  }, [people])
 
   const updatePersonTransferSettings = (personId, field, value) => {
     setLocalSettings({
@@ -294,10 +295,7 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
 
         <div className="space-y-4">
           {people.map(person => {
-            if (!localSettings.peopleTransferSettings[person.id]) {
-              initializePersonSettings(person.id)
-            }
-            const ps = localSettings.peopleTransferSettings[person.id]
+            const ps = localSettings.peopleTransferSettings?.[person.id]
             if (!ps) return null
 
             return (

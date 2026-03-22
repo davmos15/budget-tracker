@@ -90,7 +90,10 @@ export default function BillAllocation({
       byPerson[person.id] = { expenses: 0, static: 0, total: 0 }
     })
 
-    expenses.forEach(expense => {
+    // Only include actual expenses (not savings) in bill calculations
+    const billExpenses = expenses.filter(e => (e.itemType || 'expense') === 'expense')
+
+    billExpenses.forEach(expense => {
       const required = calculateRequiredInAccount(expense)
       expenseDetails.push({
         ...expense,
@@ -113,30 +116,80 @@ export default function BillAllocation({
     return { totalRequired, byPerson, expenseDetails }
   }, [expenses, staticAmounts, people, lastTransfers])
 
-  // Transfer reminder logic
+  // Transfer reminder logic - uses configured schedule (day of week/month)
   const transferReminders = useMemo(() => {
     const reminders = []
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
+    const dayNameToNum = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 }
+
     people.forEach(person => {
-      const personSettings = settings.peopleTransferSettings?.[person.id]
+      const ps = settings.peopleTransferSettings?.[person.id]
       const lastTransfer = lastTransfers[person.id]
 
-      if (!personSettings) return
+      if (!ps) return
 
       let nextTransferDate = null
-      const freq = personSettings.frequency || 'fortnightly'
 
-      if (lastTransfer) {
-        const last = new Date(lastTransfer)
-        nextTransferDate = new Date(last)
+      if (ps.type === 'dayOfMonth') {
+        // Next occurrence of this day of month
+        const day = ps.dayOfMonth || 1
+        nextTransferDate = new Date(today.getFullYear(), today.getMonth(), day)
+        if (nextTransferDate <= today) {
+          nextTransferDate.setMonth(nextTransferDate.getMonth() + 1)
+        }
+      } else if (ps.type === 'dayOfWeek') {
+        // Next occurrence of this day of week
+        const targetDay = dayNameToNum[ps.dayOfWeek] ?? 5
+        nextTransferDate = new Date(today)
+        const daysUntil = (targetDay - today.getDay() + 7) % 7
+        nextTransferDate.setDate(today.getDate() + (daysUntil === 0 ? 7 : daysUntil))
 
-        switch (freq) {
-          case 'weekly': nextTransferDate.setDate(nextTransferDate.getDate() + 7); break
-          case 'fortnightly': nextTransferDate.setDate(nextTransferDate.getDate() + 14); break
-          case 'monthly': nextTransferDate.setMonth(nextTransferDate.getMonth() + 1); break
-          case 'quarterly': nextTransferDate.setMonth(nextTransferDate.getMonth() + 3); break
+        // For fortnightly: check if this is an "on" week based on last transfer
+        if (ps.frequency === 'fortnightly' && lastTransfer) {
+          const last = new Date(lastTransfer)
+          const daysBetween = Math.round((nextTransferDate - last) / (1000 * 60 * 60 * 24))
+          if (daysBetween % 14 !== 0 && daysBetween > 7) {
+            nextTransferDate.setDate(nextTransferDate.getDate() + 7)
+          }
+        }
+      } else if (ps.type === 'weekDayOfMonth') {
+        // e.g. "2nd Friday of the month"
+        const weekNums = { '1st': 0, '2nd': 1, '3rd': 2, '4th': 3, 'Last': -1 }
+        const weekIdx = weekNums[ps.weekNumber] ?? 0
+        const targetDay = dayNameToNum[ps.weekDayOfMonth] ?? 1
+
+        const findWeekDayOfMonth = (year, month) => {
+          if (weekIdx === -1) {
+            // Last occurrence
+            const lastDay = new Date(year, month + 1, 0)
+            while (lastDay.getDay() !== targetDay) lastDay.setDate(lastDay.getDate() - 1)
+            return lastDay
+          }
+          const first = new Date(year, month, 1)
+          let d = (targetDay - first.getDay() + 7) % 7 + 1
+          d += weekIdx * 7
+          return new Date(year, month, d)
+        }
+
+        nextTransferDate = findWeekDayOfMonth(today.getFullYear(), today.getMonth())
+        if (nextTransferDate <= today) {
+          const nextMonth = today.getMonth() + 1
+          nextTransferDate = findWeekDayOfMonth(today.getFullYear(), nextMonth)
+        }
+      } else {
+        // Fallback: just add frequency to last transfer
+        if (lastTransfer) {
+          const last = new Date(lastTransfer)
+          nextTransferDate = new Date(last)
+          const freq = ps.frequency || 'fortnightly'
+          switch (freq) {
+            case 'weekly': nextTransferDate.setDate(nextTransferDate.getDate() + 7); break
+            case 'fortnightly': nextTransferDate.setDate(nextTransferDate.getDate() + 14); break
+            case 'monthly': nextTransferDate.setMonth(nextTransferDate.getMonth() + 1); break
+            case 'quarterly': nextTransferDate.setMonth(nextTransferDate.getMonth() + 3); break
+          }
         }
       }
 
