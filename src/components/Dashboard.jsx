@@ -19,9 +19,12 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
     return amount * (multipliers[frequency] || 0)
   }
 
-  const { totalIncome, totalExpenses, netSavings, incomeByPerson, expensesByCategory, expensesByCategoryDetailed } = useMemo(() => {
+  const { totalIncome, totalExpenses, totalSavingsAmt, netSavings, incomeByPerson, expensesByCategory, expensesByCategoryDetailed } = useMemo(() => {
     const totalIncome = salaries.reduce((sum, s) => sum + calculateYearlyAmount(s.amount, s.frequency), 0)
-    const totalExpenses = expenses.reduce((sum, e) => sum + calculateYearlyAmount(e.amount, e.frequency), 0)
+    const totalExpenses = expenses.filter(e => (e.itemType || 'expense') === 'expense')
+      .reduce((sum, e) => sum + calculateYearlyAmount(e.amount, e.frequency), 0)
+    const totalSavingsAmt = expenses.filter(e => e.itemType === 'saving')
+      .reduce((sum, e) => sum + calculateYearlyAmount(e.amount, e.frequency), 0)
 
     const incomeByPerson = people.reduce((acc, person) => {
       acc[person.id] = salaries.filter(s => s.personId === person.id)
@@ -46,7 +49,7 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
       return acc
     }, {})
 
-    return { totalIncome, totalExpenses, netSavings: totalIncome - totalExpenses, incomeByPerson, expensesByCategory, expensesByCategoryDetailed }
+    return { totalIncome, totalExpenses, totalSavingsAmt, netSavings: totalIncome - totalExpenses - totalSavingsAmt, incomeByPerson, expensesByCategory, expensesByCategoryDetailed }
   }, [expenses, salaries, people, categories])
 
   // Smart notifications

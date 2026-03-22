@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFirebase } from '../contexts/FirebaseContext'
-import { LayoutDashboard, Receipt, CreditCard, Calculator, Settings, Share2, ArrowLeft, Loader, Wallet, ChevronRight } from 'lucide-react'
+import { LayoutDashboard, Receipt, CreditCard, Calculator, Settings, Share2, ArrowLeft, Loader, Wallet, Moon, Sun } from 'lucide-react'
 import Dashboard from './Dashboard'
 import Expenses from './Expenses'
 import Salaries from './Salaries'
@@ -15,6 +15,21 @@ export default function BudgetApp({ onBack }) {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [showShareModal, setShowShareModal] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('darkMode') === 'true'
+    }
+    return false
+  })
+
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+    localStorage.setItem('darkMode', darkMode)
+  }, [darkMode])
 
   const [expenses, setExpenses] = useState([])
   const [categories, setCategories] = useState([])
@@ -89,7 +104,7 @@ export default function BudgetApp({ onBack }) {
 
   const tabs = [
     { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
-    { id: 'expenses', name: 'Expenses', icon: Receipt },
+    { id: 'expenses', name: 'Budget', icon: Receipt },
     { id: 'salaries', name: 'Income', icon: CreditCard },
     { id: 'allocation', name: 'Bills', icon: Calculator },
     { id: 'settings', name: 'Settings', icon: Settings }
@@ -109,7 +124,7 @@ export default function BudgetApp({ onBack }) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
       {/* Top header bar */}
       <div className="bg-gradient-brand shadow-lg">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -136,19 +151,28 @@ export default function BudgetApp({ onBack }) {
                 </div>
               )}
             </div>
-            <button
-              onClick={() => setShowShareModal(true)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-white/15 hover:bg-white/25 rounded-xl text-white text-sm transition-colors"
-            >
-              <Share2 className="h-4 w-4" />
-              <span className="hidden sm:inline">Share</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setDarkMode(!darkMode)}
+                className="p-2 hover:bg-white/15 rounded-xl text-white/70 hover:text-white transition-colors"
+                title={darkMode ? 'Light mode' : 'Dark mode'}
+              >
+                {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </button>
+              <button
+                onClick={() => setShowShareModal(true)}
+                className="flex items-center gap-2 px-3 py-1.5 bg-white/15 hover:bg-white/25 rounded-xl text-white text-sm transition-colors"
+              >
+                <Share2 className="h-4 w-4" />
+                <span className="hidden sm:inline">Share</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Tab navigation - desktop only (mobile uses bottom nav) */}
-      <div className="hidden sm:block bg-white border-b border-slate-100 shadow-sm sticky top-0 z-30">
+      <div className="hidden sm:block bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 shadow-sm sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex gap-1 overflow-x-auto py-2 scrollbar-hide">
             {tabs.map((tab) => (
@@ -184,6 +208,7 @@ export default function BudgetApp({ onBack }) {
               categories={categories}
               setCategories={updateCategories}
               people={people}
+              salaries={salaries}
               settings={settings}
             />
           )}
@@ -224,7 +249,7 @@ export default function BudgetApp({ onBack }) {
       </div>
 
       {/* Mobile bottom nav */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 shadow-lg sm:hidden z-40">
+      <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 shadow-lg sm:hidden z-40">
         <nav className="flex justify-around py-2 px-2">
           {tabs.map((tab) => (
             <button

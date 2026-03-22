@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
-import { Plus, Edit2, Trash2, X, Search, Filter, CreditCard, CalendarClock, AlertTriangle, Zap, ChevronUp, ChevronDown, Receipt } from 'lucide-react'
+import { Plus, Edit2, Trash2, X, Search, Filter, CreditCard, CalendarClock, AlertTriangle, Zap, ChevronUp, ChevronDown, Receipt, PiggyBank, TrendingDown, Wallet } from 'lucide-react'
 
-export default function Expenses({ expenses, setExpenses, categories, setCategories, people, settings }) {
+export default function Expenses({ expenses, setExpenses, categories, setCategories, people, salaries, settings }) {
   const [showAddModal, setShowAddModal] = useState(false)
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [editingExpense, setEditingExpense] = useState(null)
@@ -10,6 +10,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
   const [filterPerson, setFilterPerson] = useState('')
   const [filterFrequency, setFilterFrequency] = useState('')
   const [filterPaymentType, setFilterPaymentType] = useState('')
+  const [filterItemType, setFilterItemType] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState('monthly')
 
@@ -28,13 +29,14 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
       if (filterPerson && expense.personId !== parseInt(filterPerson)) return false
       if (filterFrequency && expense.frequency !== filterFrequency) return false
       if (filterPaymentType && expense.paymentType !== filterPaymentType) return false
+      if (filterItemType && (expense.itemType || 'expense') !== filterItemType) return false
       if (searchQuery) {
         const q = searchQuery.toLowerCase()
         if (!expense.name.toLowerCase().includes(q) && !(expense.company || '').toLowerCase().includes(q)) return false
       }
       return true
     })
-  }, [expenses, filterCategory, filterPerson, filterFrequency, filterPaymentType, searchQuery])
+  }, [expenses, filterCategory, filterPerson, filterFrequency, filterPaymentType, filterItemType, searchQuery])
 
   const calculateDisplayAmount = (amount, frequency) => {
     const yearlyMultipliers = { weekly: 52, fortnightly: 26, monthly: 12, quarterly: 4, yearly: 1 }
@@ -43,7 +45,28 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
     return yearlyAmount / divisors[viewMode]
   }
 
-  const totalAmount = filteredExpenses.reduce((sum, e) =>
+  // Calculate totals for all items (not just filtered)
+  const { totalExpenses, totalSavings, totalIncome, disposableIncome } = useMemo(() => {
+    const totalExpenses = expenses
+      .filter(e => (e.itemType || 'expense') === 'expense')
+      .reduce((sum, e) => sum + calculateDisplayAmount(e.amount, e.frequency), 0)
+    const totalSavings = expenses
+      .filter(e => e.itemType === 'saving')
+      .reduce((sum, e) => sum + calculateDisplayAmount(e.amount, e.frequency), 0)
+    const yearlyMultipliers = { weekly: 52, fortnightly: 26, monthly: 12, quarterly: 4, yearly: 1 }
+    const divisors = { weekly: 52, fortnightly: 26, monthly: 12, yearly: 1 }
+    const totalIncome = (salaries || []).reduce((sum, s) =>
+      sum + (s.amount * (yearlyMultipliers[s.frequency] || 0)) / divisors[viewMode], 0
+    )
+    return {
+      totalExpenses,
+      totalSavings,
+      totalIncome,
+      disposableIncome: totalIncome - totalExpenses - totalSavings
+    }
+  }, [expenses, salaries, viewMode])
+
+  const filteredTotal = filteredExpenses.reduce((sum, e) =>
     sum + calculateDisplayAmount(e.amount, e.frequency), 0
   )
 
@@ -141,31 +164,65 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
     return { text: `${days}d`, className: 'text-slate-400' }
   }
 
-  const hasActiveFilters = filterCategory || filterPerson || filterFrequency || filterPaymentType || searchQuery
+  const hasActiveFilters = filterCategory || filterPerson || filterFrequency || filterPaymentType || filterItemType || searchQuery
 
   return (
     <div className="space-y-5">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">Expenses</h2>
-          <p className="text-sm text-slate-500 mt-1">
-            {filteredExpenses.length} expense{filteredExpenses.length !== 1 ? 's' : ''} totalling{' '}
-            <span className="font-semibold text-slate-700">{formatCurrency(totalAmount)}</span>
-            <span className="text-slate-400"> / {viewMode}</span>
-          </p>
+          <h2 className="text-2xl font-bold text-slate-900">Budget</h2>
+          <p className="text-sm text-slate-500 mt-1">Manage your expenses and savings</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowCategoryModal(true)} className="btn-secondary text-sm">
-            Manage Categories
+            Categories
           </button>
           <button
             onClick={() => { setEditingExpense(null); setShowAddModal(true) }}
             className="btn-primary text-sm"
           >
             <Plus className="h-4 w-4" />
-            Add Expense
+            Add Item
           </button>
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="stat-card bg-gradient-danger">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm text-white/80 font-medium">Total Expenses</p>
+            <div className="p-2 bg-white/20 rounded-xl">
+              <TrendingDown className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="text-2xl font-bold">{formatCurrency(totalExpenses)}</p>
+          <p className="text-xs text-white/60 mt-1">per {viewMode}</p>
+        </div>
+
+        <div className="stat-card bg-gradient-to-br from-violet-500 to-purple-600">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm text-white/80 font-medium">Total Savings</p>
+            <div className="p-2 bg-white/20 rounded-xl">
+              <PiggyBank className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="text-2xl font-bold">{formatCurrency(totalSavings)}</p>
+          <p className="text-xs text-white/60 mt-1">per {viewMode}</p>
+        </div>
+
+        <div className={`stat-card ${disposableIncome >= 0 ? 'bg-gradient-success' : 'bg-gradient-warning'}`}>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm text-white/80 font-medium">Disposable Income</p>
+            <div className="p-2 bg-white/20 rounded-xl">
+              <Wallet className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="text-2xl font-bold">
+            {disposableIncome < 0 ? '-' : ''}{formatCurrency(disposableIncome)}
+          </p>
+          <p className="text-xs text-white/60 mt-1">per {viewMode} after expenses & savings</p>
         </div>
       </div>
 
@@ -199,6 +256,12 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
             {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
 
+          <select value={filterItemType} onChange={(e) => setFilterItemType(e.target.value)} className="input py-2 w-auto">
+            <option value="">Expenses & Savings</option>
+            <option value="expense">Expenses Only</option>
+            <option value="saving">Savings Only</option>
+          </select>
+
           <select value={filterPaymentType} onChange={(e) => setFilterPaymentType(e.target.value)} className="input py-2 w-auto">
             <option value="">All Types</option>
             {paymentTypes.map(pt => <option key={pt.value} value={pt.value}>{pt.label}</option>)}
@@ -206,7 +269,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
 
           {hasActiveFilters && (
             <button
-              onClick={() => { setFilterCategory(''); setFilterPerson(''); setFilterFrequency(''); setFilterPaymentType(''); setSearchQuery('') }}
+              onClick={() => { setFilterCategory(''); setFilterPerson(''); setFilterFrequency(''); setFilterPaymentType(''); setFilterItemType(''); setSearchQuery('') }}
               className="btn-ghost text-sm text-rose-600 hover:text-rose-700"
             >
               <X className="h-3.5 w-3.5" />
@@ -256,7 +319,10 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
                       <tr key={expense.id} className="hover:bg-slate-50/50 transition-colors">
                         <td className="table-cell">
                           <div>
-                            <p className="font-medium text-slate-900">{expense.name}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-slate-900">{expense.name}</p>
+                              {expense.itemType === 'saving' && <span className="badge badge-brand text-[10px] px-1.5 py-0">Saving</span>}
+                            </div>
                             {expense.company && <p className="text-xs text-slate-400">{expense.company}</p>}
                           </div>
                         </td>
@@ -329,6 +395,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
                         <div className="flex items-center gap-2">
                           <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: category?.color }} />
                           <p className="font-medium text-slate-900 truncate">{expense.name}</p>
+                          {expense.itemType === 'saving' && <span className="badge badge-brand text-[10px] px-1.5 py-0 flex-shrink-0">Saving</span>}
                         </div>
                         {expense.company && <p className="text-xs text-slate-400 ml-[18px]">{expense.company}</p>}
                       </div>
@@ -415,6 +482,7 @@ function ExpenseModal({ expense, categories, people, frequencies, paymentTypes, 
     categoryId: expense?.categoryId || categories[0]?.id || '',
     personId: expense?.personId || people[0]?.id || '',
     company: expense?.company || '',
+    itemType: expense?.itemType || 'expense',
     paymentType: expense?.paymentType || 'direct_debit',
     lastPaid: expense?.lastPaid || '',
     nextDueDate: expense?.nextDueDate || '',
@@ -492,16 +560,42 @@ function ExpenseModal({ expense, categories, people, frequencies, paymentTypes, 
     <div className="modal-overlay">
       <div className="modal-content max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center flex-shrink-0">
-          <h3 className="text-lg font-semibold text-slate-900">{expense ? 'Edit' : 'Add'} Expense</h3>
+          <h3 className="text-lg font-semibold text-slate-900">{expense ? 'Edit' : 'Add'} {formData.itemType === 'saving' ? 'Saving' : 'Expense'}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
             <X className="h-5 w-5" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
+          {/* Item type toggle */}
+          <div className="flex bg-slate-100 rounded-xl p-1">
+            <button
+              type="button"
+              onClick={() => setFormData({ ...formData, itemType: 'expense' })}
+              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                formData.itemType !== 'saving'
+                  ? 'bg-white shadow-sm text-slate-900'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Expense
+            </button>
+            <button
+              type="button"
+              onClick={() => setFormData({ ...formData, itemType: 'saving' })}
+              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                formData.itemType === 'saving'
+                  ? 'bg-white shadow-sm text-slate-900'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Saving
+            </button>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <label className="input-label">Expense Name</label>
+              <label className="input-label">{formData.itemType === 'saving' ? 'Saving' : 'Expense'} Name</label>
               <input
                 type="text"
                 value={formData.name}
