@@ -20,7 +20,7 @@ export default function Salaries({ salaries, setSalaries, people, setPeople, set
   }
 
   const formatCurrency = (amount) => {
-    return `${settings.currency || '$'}${amount.toLocaleString('en-US', {
+    return `${settings.currency || '$'}${Math.abs(amount).toLocaleString('en-US', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     })}`

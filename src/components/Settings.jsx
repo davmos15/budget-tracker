@@ -163,7 +163,8 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
           'info.admins': arrayUnion(userId)
         })
       }
-      window.location.reload()
+      // Reload user list to reflect changes
+      await loadBudgetUsers()
     } catch (error) {
       console.error('Error updating admin status:', error)
     }

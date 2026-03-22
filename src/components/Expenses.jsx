@@ -8,7 +8,6 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
   const [editingCategory, setEditingCategory] = useState(null)
   const [filterCategory, setFilterCategory] = useState('')
   const [filterPerson, setFilterPerson] = useState('')
-  const [filterFrequency, setFilterFrequency] = useState('')
   const [filterPaymentType, setFilterPaymentType] = useState('')
   const [filterItemType, setFilterItemType] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
@@ -27,7 +26,6 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
     return expenses.filter(expense => {
       if (filterCategory && expense.categoryId !== parseInt(filterCategory)) return false
       if (filterPerson && expense.personId !== parseInt(filterPerson)) return false
-      if (filterFrequency && expense.frequency !== filterFrequency) return false
       if (filterPaymentType && expense.paymentType !== filterPaymentType) return false
       if (filterItemType && (expense.itemType || 'expense') !== filterItemType) return false
       if (searchQuery) {
@@ -36,12 +34,12 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
       }
       return true
     })
-  }, [expenses, filterCategory, filterPerson, filterFrequency, filterPaymentType, filterItemType, searchQuery])
+  }, [expenses, filterCategory, filterPerson, filterPaymentType, filterItemType, searchQuery])
 
   const calculateDisplayAmount = (amount, frequency) => {
     const yearlyMultipliers = { weekly: 52, fortnightly: 26, monthly: 12, quarterly: 4, yearly: 1 }
     const yearlyAmount = amount * yearlyMultipliers[frequency]
-    const divisors = { weekly: 52, fortnightly: 26, monthly: 12, yearly: 1 }
+    const divisors = { weekly: 52, fortnightly: 26, monthly: 12, quarterly: 4, yearly: 1 }
     return yearlyAmount / divisors[viewMode]
   }
 
@@ -54,7 +52,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
       .filter(e => e.itemType === 'saving')
       .reduce((sum, e) => sum + calculateDisplayAmount(e.amount, e.frequency), 0)
     const yearlyMultipliers = { weekly: 52, fortnightly: 26, monthly: 12, quarterly: 4, yearly: 1 }
-    const divisors = { weekly: 52, fortnightly: 26, monthly: 12, yearly: 1 }
+    const divisors = { weekly: 52, fortnightly: 26, monthly: 12, quarterly: 4, yearly: 1 }
     const totalIncome = (salaries || []).reduce((sum, s) =>
       sum + (s.amount * (yearlyMultipliers[s.frequency] || 0)) / divisors[viewMode], 0
     )
@@ -132,7 +130,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
   }
 
   const formatCurrency = (amount) => {
-    return `${settings.currency || '$'}${amount.toLocaleString('en-US', {
+    return `${settings.currency || '$'}${Math.abs(amount).toLocaleString('en-US', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     })}`
@@ -164,7 +162,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
     return { text: `${days}d`, className: 'text-slate-400' }
   }
 
-  const hasActiveFilters = filterCategory || filterPerson || filterFrequency || filterPaymentType || filterItemType || searchQuery
+  const hasActiveFilters = filterCategory || filterPerson || filterPaymentType || filterItemType || searchQuery
 
   return (
     <div className="space-y-5">
@@ -269,7 +267,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
 
           {hasActiveFilters && (
             <button
-              onClick={() => { setFilterCategory(''); setFilterPerson(''); setFilterFrequency(''); setFilterPaymentType(''); setFilterItemType(''); setSearchQuery('') }}
+              onClick={() => { setFilterCategory(''); setFilterPerson(''); setFilterPaymentType(''); setFilterItemType(''); setSearchQuery('') }}
               className="btn-ghost text-sm text-rose-600 hover:text-rose-700"
             >
               <X className="h-3.5 w-3.5" />

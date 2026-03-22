@@ -36,9 +36,13 @@ service cloud.firestore {
     }
 
     // Budget code lookup collection - any authenticated user can read to join
+    // Only the budget owner can create/update their code entry
     match /budgetCodes/{code} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow create: if request.auth != null &&
+        request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if request.auth != null &&
+        resource.data.ownerId == request.auth.uid;
     }
   }
 }
