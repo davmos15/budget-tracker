@@ -52,6 +52,18 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
     return { totalIncome, totalExpenses, totalSavingsAmt, netSavings: totalIncome - totalExpenses - totalSavingsAmt, incomeByPerson, expensesByCategory, expensesByCategoryDetailed }
   }, [expenses, salaries, people, categories])
 
+  const getAmountForPeriod = (yearlyAmount) => {
+    const divisors = { 'Weekly': 52, 'Fortnightly': 26, 'Monthly': 12, 'Yearly': 1 }
+    return yearlyAmount / divisors[viewMode]
+  }
+
+  const formatCurrency = (amount) => {
+    return `${settings.currency || '$'}${Math.abs(amount).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })}`
+  }
+
   // Smart notifications
   const notifications = useMemo(() => {
     const alerts = []
@@ -148,18 +160,6 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
 
     return alerts
   }, [expenses, settings])
-
-  const getAmountForPeriod = (yearlyAmount) => {
-    const divisors = { 'Weekly': 52, 'Fortnightly': 26, 'Monthly': 12, 'Yearly': 1 }
-    return yearlyAmount / divisors[viewMode]
-  }
-
-  const formatCurrency = (amount) => {
-    return `${settings.currency || '$'}${Math.abs(amount).toLocaleString('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })}`
-  }
 
   const toggleCategoryExpansion = (categoryId) => {
     const newExpanded = new Set(expandedCategories)
