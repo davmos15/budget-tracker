@@ -56,9 +56,11 @@ export default function BillAllocation({
   }
 
   // Calculate the required amount for each bill based on the person's transfer schedule.
-  // The required amount steps up with each completed transfer, not linearly by day.
-  // e.g. a $300 monthly bill with fortnightly transfers: $0 after bill paid,
-  // $150 after first transfer, $300 after second transfer.
+  // Works out how much per transfer should be set aside for this bill, then multiplies
+  // by how many transfers have happened since the bill was last paid.
+  // Accumulates across cycles — if a bill is overdue, the required keeps growing.
+  // e.g. $20 fortnightly bill unpaid since March 2024 = $20 × number of fortnights since then.
+  // e.g. $240 yearly bill with fortnightly transfers = $240/26 ≈ $9.23 per transfer, accumulates.
   const calculateRequiredInAccount = (expense, personId) => {
     if (!expense.lastPaid || !expense.nextDueDate) return expense.amount
 
@@ -69,9 +71,6 @@ export default function BillAllocation({
     nextDue.setHours(0, 0, 0, 0)
     today.setHours(0, 0, 0, 0)
 
-    // If past due date, need the full amount
-    if (today >= nextDue) return expense.amount
-
     const billingCycleDays = Math.max(1, (nextDue - lastPaid) / (1000 * 60 * 60 * 24))
     const daysSinceLastPaid = Math.max(0, (today - lastPaid) / (1000 * 60 * 60 * 24))
 
@@ -80,7 +79,8 @@ export default function BillAllocation({
 
     if (!transferFreq) {
       // No transfer settings configured - fall back to day-based proration
-      const fraction = Math.min(daysSinceLastPaid / billingCycleDays, 1)
+      // No cap — accumulates past due date if bill hasn't been paid
+      const fraction = daysSinceLastPaid / billingCycleDays
       return Math.round(expense.amount * fraction * 100) / 100
     }
 
@@ -90,7 +90,10 @@ export default function BillAllocation({
     // How many transfers fit in one billing cycle (at least 1)
     const transfersPerCycle = Math.max(1, Math.round(billingCycleDays / transferFreqDays))
 
-    // Count completed transfers since bill was last paid
+    // Amount to set aside per transfer for this bill
+    const amountPerTransfer = expense.amount / transfersPerCycle
+
+    // Count ALL completed transfers since bill was last paid (no cap — accumulates if overdue)
     let completedTransfers
     const lastTransfer = lastTransfers[personId]
 
@@ -111,9 +114,7 @@ export default function BillAllocation({
       completedTransfers = Math.floor(daysSinceLastPaid / transferFreqDays)
     }
 
-    completedTransfers = Math.min(completedTransfers, transfersPerCycle)
-
-    const required = expense.amount * (completedTransfers / transfersPerCycle)
+    const required = amountPerTransfer * completedTransfers
     return Math.round(required * 100) / 100
   }
 
