@@ -55,33 +55,66 @@ export default function BillAllocation({
     return date
   }
 
-  // Calculate the required amount for each bill.
-  // Logic: each bill needs its full amount set aside for the upcoming payment.
-  // If we know the next due date and last paid date, we prorate based on
-  // how far through the billing cycle we are. Otherwise, the full amount.
-  const calculateRequiredInAccount = (expense) => {
-    // If we have both lastPaid and nextDueDate, prorate
-    if (expense.lastPaid && expense.nextDueDate) {
-      const lastPaid = new Date(expense.lastPaid)
-      const nextDue = new Date(expense.nextDueDate)
-      const today = new Date()
-      lastPaid.setHours(0, 0, 0, 0)
-      nextDue.setHours(0, 0, 0, 0)
-      today.setHours(0, 0, 0, 0)
+  // Calculate the required amount for each bill based on the person's transfer schedule.
+  // The required amount steps up with each completed transfer, not linearly by day.
+  // e.g. a $300 monthly bill with fortnightly transfers: $0 after bill paid,
+  // $150 after first transfer, $300 after second transfer.
+  const calculateRequiredInAccount = (expense, personId) => {
+    if (!expense.lastPaid || !expense.nextDueDate) return expense.amount
 
-      const totalCycleDays = Math.max(1, (nextDue - lastPaid) / (1000 * 60 * 60 * 24))
-      const daysSinceLastPaid = Math.max(0, (today - lastPaid) / (1000 * 60 * 60 * 24))
+    const lastPaid = new Date(expense.lastPaid)
+    const nextDue = new Date(expense.nextDueDate)
+    const today = new Date()
+    lastPaid.setHours(0, 0, 0, 0)
+    nextDue.setHours(0, 0, 0, 0)
+    today.setHours(0, 0, 0, 0)
 
-      // If past due date, need the full amount
-      if (today >= nextDue) return expense.amount
+    // If past due date, need the full amount
+    if (today >= nextDue) return expense.amount
 
-      // Prorate: what fraction of the cycle has elapsed
-      const fraction = Math.min(daysSinceLastPaid / totalCycleDays, 1)
+    const billingCycleDays = Math.max(1, (nextDue - lastPaid) / (1000 * 60 * 60 * 24))
+    const daysSinceLastPaid = Math.max(0, (today - lastPaid) / (1000 * 60 * 60 * 24))
+
+    const ps = settings.peopleTransferSettings?.[personId]
+    const transferFreq = ps?.frequency
+
+    if (!transferFreq) {
+      // No transfer settings configured - fall back to day-based proration
+      const fraction = Math.min(daysSinceLastPaid / billingCycleDays, 1)
       return Math.round(expense.amount * fraction * 100) / 100
     }
 
-    // No date info: need the full bill amount
-    return expense.amount
+    // Transfer frequency in days
+    const transferFreqDays = { weekly: 7, fortnightly: 14, monthly: 30, quarterly: 91 }[transferFreq] || 14
+
+    // How many transfers fit in one billing cycle (at least 1)
+    const transfersPerCycle = Math.max(1, Math.round(billingCycleDays / transferFreqDays))
+
+    // Count completed transfers since bill was last paid
+    let completedTransfers
+    const lastTransfer = lastTransfers[personId]
+
+    if (lastTransfer) {
+      const lastTransferDate = new Date(lastTransfer)
+      lastTransferDate.setHours(0, 0, 0, 0)
+
+      if (lastTransferDate <= lastPaid) {
+        // No transfers have happened since the bill was paid
+        completedTransfers = 0
+      } else {
+        // Count transfer dates between lastPaid and lastTransfer
+        const daysBetween = (lastTransferDate - lastPaid) / (1000 * 60 * 60 * 24)
+        completedTransfers = Math.floor((daysBetween - 1) / transferFreqDays) + 1
+      }
+    } else {
+      // No transfer recorded - estimate based on days elapsed
+      completedTransfers = Math.floor(daysSinceLastPaid / transferFreqDays)
+    }
+
+    completedTransfers = Math.min(completedTransfers, transfersPerCycle)
+
+    const required = expense.amount * (completedTransfers / transfersPerCycle)
+    return Math.round(required * 100) / 100
   }
 
   const { totalRequired, byPerson, expenseDetails } = useMemo(() => {
@@ -96,7 +129,7 @@ export default function BillAllocation({
     const billExpenses = expenses.filter(e => (e.itemType || 'expense') === 'expense')
 
     billExpenses.forEach(expense => {
-      const required = calculateRequiredInAccount(expense)
+      const required = calculateRequiredInAccount(expense, expense.personId)
       expenseDetails.push({
         ...expense,
         requiredAmount: required
@@ -116,7 +149,7 @@ export default function BillAllocation({
     const totalRequired = Object.values(byPerson).reduce((sum, p) => sum + p.total, 0) + staticTotal
 
     return { totalRequired, byPerson, expenseDetails }
-  }, [expenses, staticAmounts, people, lastTransfers])
+  }, [expenses, staticAmounts, people, lastTransfers, settings])
 
   // Transfer reminder logic - uses configured schedule (day of week/month)
   const transferReminders = useMemo(() => {

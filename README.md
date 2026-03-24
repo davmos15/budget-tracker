@@ -14,9 +14,9 @@ A modern, mobile-first budget tracking PWA with real-time collaboration, smart n
 - Account management with user removal and admin promotion
 
 ### Dashboard
-- Income, expenses, and net savings summary cards
+- Income, expenses, savings, and disposable income summary cards
 - Weekly, Fortnightly, Monthly, and Yearly view modes
-- Interactive charts (Pie, Bar, Table) for expense breakdown by category
+- Interactive donut chart with hover/click highlight, bar chart, and table views for expense breakdown by category
 - Expandable category drill-down showing individual expenses with payment types
 - Smart notifications panel with alerts for:
   - Overdue payments
@@ -26,12 +26,14 @@ A modern, mobile-first budget tracking PWA with real-time collaboration, smart n
   - Manual transfer reminders
 
 ### Expense Management
+- Separate tracking for expenses and savings (savings have no category)
 - Payment types: Direct Debit, Standing Order, Manual Transfer, Card Payment
 - Auto-calculated next due dates for direct debits and standing orders
 - Subscription end date tracking with expiry reminders
 - Price change tracking (date and new amount)
 - Custom categories with color coding
 - Search and filter by category, person, payment type
+- Sortable table columns (click any header to sort ascending/descending)
 - Responsive card layout on mobile, table on desktop
 
 ### Income Tracking
@@ -42,11 +44,13 @@ A modern, mobile-first budget tracking PWA with real-time collaboration, smart n
 
 ### Bill Allocation
 - **Total Bills Owing** - calculated from all expenses based on transfer schedule
+- **Smart required amounts** - steps up with each completed transfer rather than daily proration (e.g. a $300 monthly bill with fortnightly transfers shows $0 → $150 → $300)
 - **Current Bills Account** - manually enter your actual balance
 - **Excess / Deficit** - auto-calculated difference shown in green/red
 - Per-person balance breakdown with last transfer tracking
 - Quick "Today" button to record transfers
 - Transfer reminders based on configured schedule
+- Sortable table columns for bill breakdown
 - Static amounts for emergency funds or buffers
 - Auto-update next due dates when marking bills as paid
 
