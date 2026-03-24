@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Plus, X, CalendarClock, AlertTriangle, CheckCircle2, Clock, CreditCard, ArrowRight, Zap, Edit2 } from 'lucide-react'
+import { Plus, X, CalendarClock, AlertTriangle, CheckCircle2, Clock, CreditCard, ArrowRight, Zap, Edit2, ChevronUp, ChevronDown } from 'lucide-react'
 
 export default function BillAllocation({
   expenses,
@@ -17,6 +17,8 @@ export default function BillAllocation({
   const [showAddStatic, setShowAddStatic] = useState(false)
   const [editingStatic, setEditingStatic] = useState(null)
   const [currentBalance, setCurrentBalance] = useState(settings.billsAccountBalance ?? '')
+  const [sortKey, setSortKey] = useState(null)
+  const [sortDir, setSortDir] = useState('asc')
 
   const handleBalanceChange = (value) => {
     setCurrentBalance(value)
@@ -254,6 +256,48 @@ export default function BillAllocation({
     setLastTransfers({ ...lastTransfers, [personId]: today })
   }
 
+  const handleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+
+  const SortHeader = ({ label, sortField, className = '' }) => (
+    <th className={`table-header cursor-pointer select-none hover:bg-slate-100 ${className}`} onClick={() => handleSort(sortField)}>
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {sortKey === sortField ? (
+          sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+        ) : (
+          <ChevronUp className="h-3 w-3 opacity-0" />
+        )}
+      </span>
+    </th>
+  )
+
+  const sortedExpenseDetails = useMemo(() => {
+    if (!sortKey) return expenseDetails
+    const sorted = [...expenseDetails].sort((a, b) => {
+      let aVal, bVal
+      switch (sortKey) {
+        case 'name': aVal = a.name.toLowerCase(); bVal = b.name.toLowerCase(); break
+        case 'amount': aVal = a.amount; bVal = b.amount; break
+        case 'required': aVal = a.requiredAmount; bVal = b.requiredAmount; break
+        case 'owner': aVal = (people.find(p => p.id === a.personId)?.name || '').toLowerCase(); bVal = (people.find(p => p.id === b.personId)?.name || '').toLowerCase(); break
+        case 'type': aVal = a.paymentType || ''; bVal = b.paymentType || ''; break
+        case 'lastPaid': aVal = a.lastPaid || '0000'; bVal = b.lastPaid || '0000'; break
+        default: return 0
+      }
+      if (aVal < bVal) return -1
+      if (aVal > bVal) return 1
+      return 0
+    })
+    return sortDir === 'desc' ? sorted.reverse() : sorted
+  }, [expenseDetails, sortKey, sortDir, people])
+
   return (
     <div className="space-y-6">
       {/* Transfer Reminders */}
@@ -407,16 +451,16 @@ export default function BillAllocation({
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
-                <th className="table-header">Bill</th>
-                <th className="table-header text-right">Amount</th>
-                <th className="table-header text-right">Required</th>
-                <th className="table-header">Owner</th>
-                <th className="table-header">Type</th>
-                <th className="table-header">Last Paid</th>
+                <SortHeader label="Bill" sortField="name" />
+                <SortHeader label="Amount" sortField="amount" className="text-right" />
+                <SortHeader label="Required" sortField="required" className="text-right" />
+                <SortHeader label="Owner" sortField="owner" />
+                <SortHeader label="Type" sortField="type" />
+                <SortHeader label="Last Paid" sortField="lastPaid" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {expenseDetails.map(expense => {
+              {sortedExpenseDetails.map(expense => {
                 const person = people.find(p => p.id === expense.personId)
                 const category = categories.find(c => c.id === expense.categoryId)
                 const nextDue = expense.nextDueDate ? new Date(expense.nextDueDate) : null
@@ -489,7 +533,7 @@ export default function BillAllocation({
 
         {/* Mobile cards */}
         <div className="md:hidden divide-y divide-slate-100">
-          {expenseDetails.map(expense => {
+          {sortedExpenseDetails.map(expense => {
             const person = people.find(p => p.id === expense.personId)
             const category = categories.find(c => c.id === expense.categoryId)
             const nextDue = expense.nextDueDate ? new Date(expense.nextDueDate) : null

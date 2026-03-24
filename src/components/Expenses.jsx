@@ -12,9 +12,12 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
   const [filterItemType, setFilterItemType] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState('monthly')
+  const [sortKey, setSortKey] = useState(null)
+  const [sortDir, setSortDir] = useState('asc')
 
   const frequencies = ['weekly', 'fortnightly', 'monthly', 'quarterly', 'yearly']
   const viewModes = ['weekly', 'fortnightly', 'monthly', 'yearly']
+  const periodLabels = { weekly: 'week', fortnightly: 'fortnight', monthly: 'month', yearly: 'year' }
   const paymentTypes = [
     { value: 'direct_debit', label: 'Direct Debit', color: 'emerald' },
     { value: 'standing_order', label: 'Standing Order', color: 'blue' },
@@ -67,6 +70,49 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
   const filteredTotal = filteredExpenses.reduce((sum, e) =>
     sum + calculateDisplayAmount(e.amount, e.frequency), 0
   )
+
+  const handleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+
+  const SortHeader = ({ label, sortField, className = '' }) => (
+    <th className={`table-header cursor-pointer select-none hover:bg-slate-100 ${className}`} onClick={() => handleSort(sortField)}>
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {sortKey === sortField ? (
+          sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+        ) : (
+          <ChevronUp className="h-3 w-3 opacity-0" />
+        )}
+      </span>
+    </th>
+  )
+
+  const sortedExpenses = useMemo(() => {
+    if (!sortKey) return filteredExpenses
+    const sorted = [...filteredExpenses].sort((a, b) => {
+      let aVal, bVal
+      switch (sortKey) {
+        case 'name': aVal = a.name.toLowerCase(); bVal = b.name.toLowerCase(); break
+        case 'amount': aVal = a.amount; bVal = b.amount; break
+        case 'displayAmount': aVal = calculateDisplayAmount(a.amount, a.frequency); bVal = calculateDisplayAmount(b.amount, b.frequency); break
+        case 'category': aVal = (categories.find(c => c.id === a.categoryId)?.name || '').toLowerCase(); bVal = (categories.find(c => c.id === b.categoryId)?.name || '').toLowerCase(); break
+        case 'person': aVal = (people.find(p => p.id === a.personId)?.name || '').toLowerCase(); bVal = (people.find(p => p.id === b.personId)?.name || '').toLowerCase(); break
+        case 'type': aVal = a.paymentType || ''; bVal = b.paymentType || ''; break
+        case 'nextDue': aVal = a.nextDueDate || '9999'; bVal = b.nextDueDate || '9999'; break
+        default: return 0
+      }
+      if (aVal < bVal) return -1
+      if (aVal > bVal) return 1
+      return 0
+    })
+    return sortDir === 'desc' ? sorted.reverse() : sorted
+  }, [filteredExpenses, sortKey, sortDir, categories, people, viewMode])
 
   // Auto-calculate next due date based on frequency and last paid
   const calculateNextDueDate = (expense) => {
@@ -196,7 +242,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
             </div>
           </div>
           <p className="text-2xl font-bold">{formatCurrency(totalExpenses)}</p>
-          <p className="text-xs text-white/60 mt-1">per {viewMode}</p>
+          <p className="text-xs text-white/60 mt-1">per {periodLabels[viewMode]}</p>
         </div>
 
         <div className="stat-card bg-gradient-to-br from-violet-500 to-purple-600">
@@ -207,7 +253,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
             </div>
           </div>
           <p className="text-2xl font-bold">{formatCurrency(totalSavings)}</p>
-          <p className="text-xs text-white/60 mt-1">per {viewMode}</p>
+          <p className="text-xs text-white/60 mt-1">per {periodLabels[viewMode]}</p>
         </div>
 
         <div className={`stat-card ${disposableIncome >= 0 ? 'bg-gradient-success' : 'bg-gradient-warning'}`}>
@@ -220,7 +266,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
           <p className="text-2xl font-bold">
             {disposableIncome < 0 ? '-' : ''}{formatCurrency(disposableIncome)}
           </p>
-          <p className="text-xs text-white/60 mt-1">per {viewMode} after expenses & savings</p>
+          <p className="text-xs text-white/60 mt-1">per {periodLabels[viewMode]} after expenses & savings</p>
         </div>
       </div>
 
@@ -296,18 +342,18 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
               <table className="w-full">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-100">
-                    <th className="table-header">Name</th>
-                    <th className="table-header text-right">Amount</th>
-                    <th className="table-header text-right">{viewMode.charAt(0).toUpperCase() + viewMode.slice(1)}</th>
-                    <th className="table-header">Category</th>
-                    <th className="table-header">Person</th>
-                    <th className="table-header">Type</th>
-                    <th className="table-header text-center">Next Due</th>
+                    <SortHeader label="Name" sortField="name" />
+                    <SortHeader label="Amount" sortField="amount" className="text-right" />
+                    <SortHeader label={viewMode.charAt(0).toUpperCase() + viewMode.slice(1)} sortField="displayAmount" className="text-right" />
+                    <SortHeader label="Category" sortField="category" />
+                    <SortHeader label="Person" sortField="person" />
+                    <SortHeader label="Type" sortField="type" />
+                    <SortHeader label="Next Due" sortField="nextDue" className="text-center" />
                     <th className="table-header text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredExpenses.map(expense => {
+                  {sortedExpenses.map(expense => {
                     const category = categories.find(c => c.id === expense.categoryId)
                     const person = people.find(p => p.id === expense.personId)
                     const displayAmount = calculateDisplayAmount(expense.amount, expense.frequency)
@@ -380,7 +426,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
 
             {/* Mobile cards */}
             <div className="md:hidden divide-y divide-slate-100">
-              {filteredExpenses.map(expense => {
+              {sortedExpenses.map(expense => {
                 const category = categories.find(c => c.id === expense.categoryId)
                 const person = people.find(p => p.id === expense.personId)
                 const displayAmount = calculateDisplayAmount(expense.amount, expense.frequency)
@@ -530,7 +576,7 @@ function ExpenseModal({ expense, categories, people, frequencies, paymentTypes, 
     onSave({
       ...formData,
       amount: parseFloat(formData.amount),
-      categoryId: parseInt(formData.categoryId),
+      categoryId: formData.itemType === 'saving' ? null : parseInt(formData.categoryId),
       personId: parseInt(formData.personId),
       priceChangeAmount: formData.priceChangeAmount ? parseFloat(formData.priceChangeAmount) : null
     })
@@ -655,18 +701,20 @@ function ExpenseModal({ expense, categories, people, frequencies, paymentTypes, 
               />
             </div>
 
-            <div>
-              <label className="input-label">Category</label>
-              <select
-                value={formData.categoryId}
-                onChange={(e) => handleCategoryChange(e.target.value)}
-                className="input"
-                required
-              >
-                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                <option value="new">+ Add New Category</option>
-              </select>
-            </div>
+            {formData.itemType !== 'saving' && (
+              <div>
+                <label className="input-label">Category</label>
+                <select
+                  value={formData.categoryId}
+                  onChange={(e) => handleCategoryChange(e.target.value)}
+                  className="input"
+                  required
+                >
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  <option value="new">+ Add New Category</option>
+                </select>
+              </div>
+            )}
 
             <div>
               <label className="input-label">Person</label>
@@ -681,7 +729,7 @@ function ExpenseModal({ expense, categories, people, frequencies, paymentTypes, 
             </div>
           </div>
 
-          {showNewCategory && (
+          {showNewCategory && formData.itemType !== 'saving' && (
             <div className="p-4 bg-slate-50 rounded-xl space-y-3">
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2">

@@ -1,13 +1,15 @@
 import { useState, useMemo } from 'react'
-import { TrendingUp, TrendingDown, DollarSign, ChevronDown, ChevronUp, PieChart, BarChart3, Table, AlertTriangle, Clock, CalendarClock, Bell, CreditCard, Zap } from 'lucide-react'
-import { PieChart as RechartsPieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+import { TrendingUp, TrendingDown, DollarSign, ChevronDown, ChevronUp, PieChart, BarChart3, Table, AlertTriangle, Clock, CalendarClock, Bell, CreditCard, Zap, Wallet, PiggyBank } from 'lucide-react'
+import { PieChart as RechartsPieChart, Pie, Cell, Sector, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 
 export default function Dashboard({ expenses, salaries, people, categories, settings }) {
   const [viewMode, setViewMode] = useState('Monthly')
   const [expenseChartType, setExpenseChartType] = useState('pie')
   const [expandedCategories, setExpandedCategories] = useState(new Set())
+  const [activePieIndex, setActivePieIndex] = useState(null)
 
   const viewModes = ['Weekly', 'Fortnightly', 'Monthly', 'Yearly']
+  const periodLabels = { Weekly: 'week', Fortnightly: 'fortnight', Monthly: 'month', Yearly: 'year' }
   const chartTypes = [
     { id: 'table', icon: Table, label: 'Table' },
     { id: 'pie', icon: PieChart, label: 'Pie Chart' },
@@ -178,6 +180,32 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
       color: c.color
     }))
 
+  const renderActiveShape = (props) => {
+    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, payload, value } = props
+    return (
+      <g>
+        <Sector
+          cx={cx}
+          cy={cy}
+          innerRadius={innerRadius - 4}
+          outerRadius={outerRadius + 8}
+          startAngle={startAngle}
+          endAngle={endAngle}
+          fill={fill}
+          stroke="white"
+          strokeWidth={3}
+          style={{ filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.15))' }}
+        />
+        <text x={cx} y={cy - 8} textAnchor="middle" fill="#1e293b" fontSize={14} fontWeight={600}>
+          {payload.name}
+        </text>
+        <text x={cx} y={cy + 12} textAnchor="middle" fill="#64748b" fontSize={12}>
+          {formatCurrency(value)}
+        </text>
+      </g>
+    )
+  }
+
   const renderChart = (data, chartType) => {
     if (data.length === 0) {
       return <p className="text-sm text-slate-400 text-center py-8">No data to display</p>
@@ -196,9 +224,15 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
                 outerRadius={90}
                 paddingAngle={3}
                 dataKey="value"
+                activeIndex={activePieIndex}
+                activeShape={renderActiveShape}
+                onMouseEnter={(_, index) => setActivePieIndex(index)}
+                onMouseLeave={() => setActivePieIndex(null)}
+                onClick={(_, index) => setActivePieIndex(activePieIndex === index ? null : index)}
+                style={{ outline: 'none', cursor: 'pointer' }}
               >
                 {data.map((entry, i) => (
-                  <Cell key={i} fill={entry.color} stroke="white" strokeWidth={2} />
+                  <Cell key={i} fill={entry.color} stroke="white" strokeWidth={2} style={{ outline: 'none' }} />
                 ))}
               </Pie>
               <Tooltip
@@ -288,7 +322,7 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
       )}
 
       {/* Stat cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         <div className="stat-card bg-gradient-success">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm text-white/80 font-medium">Total Income</p>
@@ -297,7 +331,7 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
             </div>
           </div>
           <p className="text-2xl font-bold">{formatCurrency(getAmountForPeriod(totalIncome))}</p>
-          <p className="text-xs text-white/60 mt-1">per {viewMode.toLowerCase()}</p>
+          <p className="text-xs text-white/60 mt-1">per {periodLabels[viewMode]}</p>
         </div>
 
         <div className="stat-card bg-gradient-danger">
@@ -308,20 +342,31 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
             </div>
           </div>
           <p className="text-2xl font-bold">{formatCurrency(getAmountForPeriod(totalExpenses))}</p>
-          <p className="text-xs text-white/60 mt-1">per {viewMode.toLowerCase()}</p>
+          <p className="text-xs text-white/60 mt-1">per {periodLabels[viewMode]}</p>
+        </div>
+
+        <div className="stat-card bg-gradient-to-br from-violet-500 to-purple-600">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm text-white/80 font-medium">Total Savings</p>
+            <div className="p-2 bg-white/20 rounded-xl">
+              <PiggyBank className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="text-2xl font-bold">{formatCurrency(getAmountForPeriod(totalSavingsAmt))}</p>
+          <p className="text-xs text-white/60 mt-1">per {periodLabels[viewMode]}</p>
         </div>
 
         <div className={`stat-card ${netSavings >= 0 ? 'bg-gradient-info' : 'bg-gradient-danger'}`}>
           <div className="flex items-center justify-between mb-3">
-            <p className="text-sm text-white/80 font-medium">Net Savings</p>
+            <p className="text-sm text-white/80 font-medium">Disposable Income</p>
             <div className="p-2 bg-white/20 rounded-xl">
-              <DollarSign className="h-4 w-4" />
+              <Wallet className="h-4 w-4" />
             </div>
           </div>
           <p className="text-2xl font-bold">
             {netSavings < 0 ? '-' : ''}{formatCurrency(getAmountForPeriod(netSavings))}
           </p>
-          <p className="text-xs text-white/60 mt-1">per {viewMode.toLowerCase()}</p>
+          <p className="text-xs text-white/60 mt-1">per {periodLabels[viewMode]} after expenses & savings</p>
         </div>
       </div>
 

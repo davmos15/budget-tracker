@@ -3,6 +3,13 @@
 @tailwind utilities;
 
 @layer base {
+  .recharts-sector:focus,
+  .recharts-sector:active,
+  .recharts-pie:focus,
+  .recharts-pie-sector:focus {
+    outline: none;
+  }
+
   body {
     @apply bg-slate-50 text-slate-900 antialiased;
   }
