@@ -62,24 +62,38 @@ export default function BillAllocation({
   // e.g. $20 fortnightly bill unpaid since March 2024 = $20 × number of fortnights since then.
   // e.g. $240 yearly bill with fortnightly transfers = $240/26 ≈ $9.23 per transfer, accumulates.
   const calculateRequiredInAccount = (expense, personId) => {
-    if (!expense.lastPaid || !expense.nextDueDate) return expense.amount
-
-    const lastPaid = new Date(expense.lastPaid)
-    const nextDue = new Date(expense.nextDueDate)
     const today = new Date()
-    lastPaid.setHours(0, 0, 0, 0)
-    nextDue.setHours(0, 0, 0, 0)
     today.setHours(0, 0, 0, 0)
 
-    const billingCycleDays = Math.max(1, (nextDue - lastPaid) / (1000 * 60 * 60 * 24))
-    const daysSinceLastPaid = Math.max(0, (today - lastPaid) / (1000 * 60 * 60 * 24))
+    // Derive billing cycle length — prefer actual dates, fall back to frequency
+    const frequencyDays = { weekly: 7, fortnightly: 14, monthly: 30, quarterly: 91, yearly: 365 }
+    let billingCycleDays
+    let daysSinceLastPaid
+
+    if (expense.lastPaid && expense.nextDueDate) {
+      const lastPaid = new Date(expense.lastPaid)
+      const nextDue = new Date(expense.nextDueDate)
+      lastPaid.setHours(0, 0, 0, 0)
+      nextDue.setHours(0, 0, 0, 0)
+      billingCycleDays = Math.max(1, (nextDue - lastPaid) / (1000 * 60 * 60 * 24))
+      daysSinceLastPaid = Math.max(0, (today - lastPaid) / (1000 * 60 * 60 * 24))
+    } else if (expense.lastPaid) {
+      const lastPaid = new Date(expense.lastPaid)
+      lastPaid.setHours(0, 0, 0, 0)
+      billingCycleDays = frequencyDays[expense.frequency] || 30
+      daysSinceLastPaid = Math.max(0, (today - lastPaid) / (1000 * 60 * 60 * 24))
+    } else {
+      // No lastPaid at all — use bill frequency as cycle length
+      // Assume we're midway through a cycle as a reasonable default
+      billingCycleDays = frequencyDays[expense.frequency] || 30
+      daysSinceLastPaid = billingCycleDays / 2
+    }
 
     const ps = settings.peopleTransferSettings?.[personId]
     const transferFreq = ps?.frequency
 
     if (!transferFreq) {
       // No transfer settings configured - fall back to day-based proration
-      // No cap — accumulates past due date if bill hasn't been paid
       const fraction = daysSinceLastPaid / billingCycleDays
       return Math.round(expense.amount * fraction * 100) / 100
     }
@@ -97,20 +111,20 @@ export default function BillAllocation({
     let completedTransfers
     const lastTransfer = lastTransfers[personId]
 
-    if (lastTransfer) {
+    if (expense.lastPaid && lastTransfer) {
+      const lastPaid = new Date(expense.lastPaid)
+      lastPaid.setHours(0, 0, 0, 0)
       const lastTransferDate = new Date(lastTransfer)
       lastTransferDate.setHours(0, 0, 0, 0)
 
       if (lastTransferDate <= lastPaid) {
-        // No transfers have happened since the bill was paid
         completedTransfers = 0
       } else {
-        // Count transfer dates between lastPaid and lastTransfer
         const daysBetween = (lastTransferDate - lastPaid) / (1000 * 60 * 60 * 24)
         completedTransfers = Math.floor((daysBetween - 1) / transferFreqDays) + 1
       }
     } else {
-      // No transfer recorded - estimate based on days elapsed
+      // Estimate based on days elapsed
       completedTransfers = Math.floor(daysSinceLastPaid / transferFreqDays)
     }
 
