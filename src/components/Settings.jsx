@@ -41,17 +41,16 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
   const weekNumbers = ['1st', '2nd', '3rd', '4th', 'Last']
 
   const currencies = [
-    { value: '$', label: 'USD ($)' },
-    { value: '€', label: 'EUR' },
-    { value: '£', label: 'GBP' },
-    { value: '¥', label: 'JPY' },
-    { value: '₹', label: 'INR' },
-    { value: '₽', label: 'RUB' },
-    { value: 'R', label: 'ZAR (R)' },
-    { value: '₩', label: 'KRW' },
-    { value: '$', label: 'AUD ($)' },
-    { value: 'NZ$', label: 'NZD (NZ$)' },
-    { value: 'C$', label: 'CAD (C$)' }
+    { value: '$', label: '$' },
+    { value: '€', label: '€' },
+    { value: '£', label: '£' },
+    { value: '¥', label: '¥' },
+    { value: '₹', label: '₹' },
+    { value: '₽', label: '₽' },
+    { value: 'R', label: 'R' },
+    { value: '₩', label: '₩' },
+    { value: 'NZ$', label: 'NZ$' },
+    { value: 'C$', label: 'C$' }
   ]
 
   // Initialize transfer settings for any people that don't have them yet

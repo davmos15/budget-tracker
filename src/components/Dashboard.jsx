@@ -324,49 +324,55 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
       {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         <div className="stat-card bg-gradient-success">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between sm:mb-3">
             <p className="text-sm text-white/80 font-medium">Total Income</p>
-            <div className="p-2 bg-white/20 rounded-xl">
+            <div className="p-2 bg-white/20 rounded-xl sm:block hidden">
               <TrendingUp className="h-4 w-4" />
             </div>
+            <p className="text-2xl font-bold sm:hidden">{formatCurrency(getAmountForPeriod(totalIncome))}</p>
           </div>
-          <p className="text-2xl font-bold">{formatCurrency(getAmountForPeriod(totalIncome))}</p>
-          <p className="text-xs text-white/60 mt-1">per {periodLabels[viewMode]}</p>
+          <p className="text-2xl font-bold hidden sm:block">{formatCurrency(getAmountForPeriod(totalIncome))}</p>
+          <p className="text-xs text-white/60 mt-1 hidden sm:block">per {periodLabels[viewMode]}</p>
         </div>
 
         <div className="stat-card bg-gradient-danger">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between sm:mb-3">
             <p className="text-sm text-white/80 font-medium">Total Expenses</p>
-            <div className="p-2 bg-white/20 rounded-xl">
+            <div className="p-2 bg-white/20 rounded-xl sm:block hidden">
               <TrendingDown className="h-4 w-4" />
             </div>
+            <p className="text-2xl font-bold sm:hidden">{formatCurrency(getAmountForPeriod(totalExpenses))}</p>
           </div>
-          <p className="text-2xl font-bold">{formatCurrency(getAmountForPeriod(totalExpenses))}</p>
-          <p className="text-xs text-white/60 mt-1">per {periodLabels[viewMode]}</p>
+          <p className="text-2xl font-bold hidden sm:block">{formatCurrency(getAmountForPeriod(totalExpenses))}</p>
+          <p className="text-xs text-white/60 mt-1 hidden sm:block">per {periodLabels[viewMode]}</p>
         </div>
 
         <div className="stat-card bg-gradient-to-br from-violet-500 to-purple-600">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between sm:mb-3">
             <p className="text-sm text-white/80 font-medium">Total Savings</p>
-            <div className="p-2 bg-white/20 rounded-xl">
+            <div className="p-2 bg-white/20 rounded-xl sm:block hidden">
               <PiggyBank className="h-4 w-4" />
             </div>
+            <p className="text-2xl font-bold sm:hidden">{formatCurrency(getAmountForPeriod(totalSavingsAmt))}</p>
           </div>
-          <p className="text-2xl font-bold">{formatCurrency(getAmountForPeriod(totalSavingsAmt))}</p>
-          <p className="text-xs text-white/60 mt-1">per {periodLabels[viewMode]}</p>
+          <p className="text-2xl font-bold hidden sm:block">{formatCurrency(getAmountForPeriod(totalSavingsAmt))}</p>
+          <p className="text-xs text-white/60 mt-1 hidden sm:block">per {periodLabels[viewMode]}</p>
         </div>
 
         <div className={`stat-card ${netSavings >= 0 ? 'bg-gradient-info' : 'bg-gradient-danger'}`}>
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between sm:mb-3">
             <p className="text-sm text-white/80 font-medium">Disposable Income</p>
-            <div className="p-2 bg-white/20 rounded-xl">
+            <div className="p-2 bg-white/20 rounded-xl sm:block hidden">
               <Wallet className="h-4 w-4" />
             </div>
+            <p className="text-2xl font-bold sm:hidden">
+              {netSavings < 0 ? '-' : ''}{formatCurrency(getAmountForPeriod(netSavings))}
+            </p>
           </div>
-          <p className="text-2xl font-bold">
+          <p className="text-2xl font-bold hidden sm:block">
             {netSavings < 0 ? '-' : ''}{formatCurrency(getAmountForPeriod(netSavings))}
           </p>
-          <p className="text-xs text-white/60 mt-1">per {periodLabels[viewMode]} after expenses & savings</p>
+          <p className="text-xs text-white/60 mt-1 hidden sm:block">per {periodLabels[viewMode]} after expenses & savings</p>
         </div>
       </div>
 
