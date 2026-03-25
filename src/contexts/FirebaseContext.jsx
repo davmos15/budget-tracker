@@ -16,6 +16,7 @@ export function FirebaseProvider({ children }) {
   const [budgetOwnerId, setBudgetOwnerId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [budgetLoading, setBudgetLoading] = useState(false)
+  const [isNewBudget, setIsNewBudget] = useState(false)
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -54,9 +55,11 @@ export function FirebaseProvider({ children }) {
     if (selection) {
       setBudgetId(selection.budgetId)
       setBudgetOwnerId(selection.ownerId)
+      setIsNewBudget(selection.isNew || false)
     } else {
       setBudgetId(null)
       setBudgetOwnerId(null)
+      setIsNewBudget(false)
     }
   }
 
@@ -78,6 +81,8 @@ export function FirebaseProvider({ children }) {
     budgetOwnerId,
     loading,
     budgetLoading,
+    isNewBudget,
+    setIsNewBudget,
     selectBudget,
     logout
   }

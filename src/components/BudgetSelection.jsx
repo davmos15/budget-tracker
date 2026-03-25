@@ -125,7 +125,7 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
           { id: 8, name: 'Insurance', color: '#14b8a6' }
         ],
         settings: {
-          dateFormat: 'MM/dd/yyyy',
+          dateFormat: 'dd/MM/yyyy',
           transferFrequency: 'fortnightly',
           currency: '$',
           peopleTransferSettings: {}
@@ -143,8 +143,8 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
         createdAt: serverTimestamp()
       })
 
-      await loadUserBudgets()
       setShowCreateModal(false)
+      onSelectBudget({ budgetId, ownerId: user.uid, isNew: true })
     } catch (error) {
       console.error('Error creating budget:', error)
       if (error.code === 'permission-denied') {
@@ -332,6 +332,20 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
             <span className="text-emerald-700 font-semibold">Join Existing Budget</span>
             <span className="text-emerald-500 text-sm">Enter a budget code to join</span>
           </button>
+        </div>
+
+        {/* Buy Me a Coffee */}
+        <div className="flex justify-center mt-4 mb-8">
+          <a
+            href="https://www.buymeacoffee.com/nadavmoskow"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl shadow-sm hover:shadow-md transition-all hover:scale-105"
+            style={{ backgroundColor: '#FFDD00', color: '#000000', fontFamily: 'Cookie, cursive', fontSize: '18px' }}
+          >
+            <img src="https://cdn.buymeacoffee.com/buttons/bmc-new-btn-logo.svg" alt="" className="h-5 w-5" />
+            <span>Support this website</span>
+          </a>
         </div>
       </div>
 

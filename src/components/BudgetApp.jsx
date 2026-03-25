@@ -9,9 +9,11 @@ import Salaries from './Salaries'
 import BillAllocation from './BillAllocation'
 import SettingsPage from './Settings'
 import ShareBudgetModal from './ShareBudgetModal'
+import OnboardingFlow from './OnboardingFlow'
 
 export default function BudgetApp({ onBack }) {
-  const { user, budget, budgetId, budgetOwnerId, budgetLoading } = useFirebase()
+  const { user, budget, budgetId, budgetOwnerId, budgetLoading, isNewBudget, setIsNewBudget } = useFirebase()
+  const [showOnboarding, setShowOnboarding] = useState(false)
   const [activeTab, setActiveTab] = useState('dashboard')
   const [showShareModal, setShowShareModal] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -100,6 +102,33 @@ export default function BudgetApp({ onBack }) {
   const updateStaticAmounts = (newAmounts) => {
     setStaticAmounts(newAmounts)
     saveToFirebase('staticAmounts', newAmounts)
+  }
+
+  useEffect(() => {
+    if (isNewBudget && budget) {
+      setShowOnboarding(true)
+      setIsNewBudget(false)
+    }
+  }, [isNewBudget, budget])
+
+  const handleOnboardingComplete = (data) => {
+    setShowOnboarding(false)
+    if (data) {
+      if (data.expenses?.length > 0) {
+        const newExpenses = [...expenses, ...data.expenses]
+        setExpenses(newExpenses)
+        saveToFirebase('expenses', newExpenses)
+      }
+      if (data.salaries?.length > 0) {
+        const newSalaries = [...salaries, ...data.salaries]
+        setSalaries(newSalaries)
+        saveToFirebase('salaries', newSalaries)
+      }
+      if (data.categories) {
+        setCategories(data.categories)
+        saveToFirebase('categories', data.categories)
+      }
+    }
   }
 
   const tabs = [
@@ -243,6 +272,7 @@ export default function BudgetApp({ onBack }) {
               people={people}
               budgetCode={budget?.info?.code}
               budgetName={budget?.info?.name}
+              onBack={onBack}
             />
           )}
         </div>
@@ -275,6 +305,15 @@ export default function BudgetApp({ onBack }) {
         <ShareBudgetModal
           budgetCode={budget?.info?.code}
           onClose={() => setShowShareModal(false)}
+        />
+      )}
+
+      {showOnboarding && (
+        <OnboardingFlow
+          user={user}
+          categories={categories}
+          settings={settings}
+          onComplete={handleOnboardingComplete}
         />
       )}
     </div>

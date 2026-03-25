@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { Plus, X, CalendarClock, AlertTriangle, CheckCircle2, Clock, CreditCard, ArrowRight, Zap, Edit2, ChevronUp, ChevronDown } from 'lucide-react'
+import InfoTooltip from './InfoTooltip'
 
 export default function BillAllocation({
   expenses,
@@ -384,6 +385,10 @@ export default function BillAllocation({
       {/* Bills Overview Card */}
       <div className="card overflow-hidden">
         <div className="bg-gradient-brand p-6 text-white">
+          <div className="flex items-center gap-2 mb-4">
+            <h2 className="text-lg font-semibold">Bill Allocation</h2>
+            <InfoTooltip text="Shows how much you need in your bills account based on your transfer schedule. Enter your current balance to see if you're on track. Each bill accumulates based on how many pay periods have passed since it was last paid." />
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Total Bills Owing */}
             <div>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Plus, Edit2, Trash2, X, UserPlus, Briefcase, TrendingUp } from 'lucide-react'
+import InfoTooltip from './InfoTooltip'
 
 export default function Salaries({ salaries, setSalaries, people, setPeople, settings }) {
   const [showSalaryModal, setShowSalaryModal] = useState(false)
@@ -71,7 +72,10 @@ export default function Salaries({ salaries, setSalaries, people, setPeople, set
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">Income Sources</h2>
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-2xl font-bold text-slate-900">Income Sources</h2>
+            <InfoTooltip text="Add all post-tax income sources for each person. This is used to calculate your disposable income and bill allocation amounts. Set pay schedules so the app knows when money comes in." />
+          </div>
           <p className="text-sm text-slate-500 mt-1">Manage salaries and income for each person</p>
         </div>
         <div className="flex gap-2">

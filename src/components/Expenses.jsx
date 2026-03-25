@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { Plus, Edit2, Trash2, X, Search, Filter, CreditCard, CalendarClock, AlertTriangle, Zap, ChevronUp, ChevronDown, Receipt, PiggyBank, TrendingDown, Wallet } from 'lucide-react'
+import InfoTooltip from './InfoTooltip'
 
 export default function Expenses({ expenses, setExpenses, categories, setCategories, people, salaries, settings }) {
   const [showAddModal, setShowAddModal] = useState(false)
@@ -215,7 +216,10 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">Budget</h2>
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-2xl font-bold text-slate-900">Budget</h2>
+            <InfoTooltip text="Track all your recurring expenses and savings. Each item can have a category, payment type, frequency, and due dates. Use filters to find specific items. Items marked as 'Saving' are tracked separately from expenses." />
+          </div>
           <p className="text-sm text-slate-500 mt-1">Manage your expenses and savings</p>
         </div>
         <div className="flex gap-2">

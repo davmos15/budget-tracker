@@ -54,12 +54,26 @@ A modern, mobile-first budget tracking PWA with real-time collaboration, smart n
 - Static amounts for emergency funds or buffers
 - Auto-update next due dates when marking bills as paid
 
+### Onboarding
+- Guided setup wizard for new budgets
+- Step-by-step walkthrough of all app features
+- Pre-populated common expense templates (30+ items across 8 categories)
+- Toggle expenses on/off and adjust amounts during setup
+- Income entry with live budget summary
+- Skip option available at any step
+
+### Info Tooltips
+- Contextual help icons on every major section
+- Click to reveal explanations of how each feature works
+- Same content as onboarding for consistent guidance
+
 ### Settings
 - Currency support: $, EUR, GBP, JPY, INR, RUB, ZAR, KRW, AUD, NZD, CAD
-- Date format options (US, EU, ISO, text formats)
+- Date format options (US, EU, ISO, text formats) - default DD/MM/YYYY
 - Per-person transfer frequency and schedule configuration
 - Sticky save bar when changes are pending
 - Budget sharing and user management (admin only)
+- Delete budget (owner) or leave budget (member) with confirmation
 - Account deletion with confirmation
 
 ### Progressive Web App (PWA)
@@ -142,7 +156,9 @@ budget-tracker/
 │   │   ├── Settings.jsx
 │   │   ├── BudgetApp.jsx
 │   │   ├── BudgetSelection.jsx
-│   │   └── ShareBudgetModal.jsx
+│   │   ├── ShareBudgetModal.jsx
+│   │   ├── OnboardingFlow.jsx
+│   │   └── InfoTooltip.jsx
 │   ├── contexts/
 │   │   └── FirebaseContext.jsx
 │   ├── firebase.js
@@ -161,6 +177,12 @@ budget-tracker/
 ├── postcss.config.js
 └── vite.config.js
 ```
+
+## Support
+
+If you find this project useful, consider supporting it!
+
+<a href="https://www.buymeacoffee.com/nadavmoskow" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="40"></a>
 
 ## License
 

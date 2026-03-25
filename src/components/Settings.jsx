@@ -6,7 +6,7 @@ import { deleteUser } from 'firebase/auth'
 import { doc, getDoc, updateDoc, deleteDoc, arrayRemove, arrayUnion, collection, getDocs } from 'firebase/firestore'
 import ShareBudgetModal from './ShareBudgetModal'
 
-export default function SettingsPage({ settings, setSettings, people, budgetCode, budgetName }) {
+export default function SettingsPage({ settings, setSettings, people, budgetCode, budgetName, onBack }) {
   const { user, budget, budgetId, budgetOwnerId } = useFirebase()
   const [localSettings, setLocalSettings] = useState({
     ...settings,
@@ -18,6 +18,9 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [deleteError, setDeleteError] = useState('')
   const [showManageUsers, setShowManageUsers] = useState(false)
+  const [showDeleteBudgetModal, setShowDeleteBudgetModal] = useState(false)
+  const [deleteBudgetLoading, setDeleteBudgetLoading] = useState(false)
+  const [deleteBudgetError, setDeleteBudgetError] = useState('')
   const [budgetUsers, setBudgetUsers] = useState([])
   const [loadingUsers, setLoadingUsers] = useState(false)
 
@@ -202,6 +205,62 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
         setDeleteError('Failed to delete account. Please try again.')
       }
       setDeleteLoading(false)
+    }
+  }
+
+  const handleDeleteBudget = async () => {
+    setDeleteBudgetLoading(true)
+    setDeleteBudgetError('')
+    try {
+      const isOwner = budget?.info?.createdBy === user.uid
+      if (isOwner) {
+        // Delete the budget doc
+        await deleteDoc(doc(db, 'users', user.uid, 'budgets', budgetId))
+        // Delete the budget code lookup
+        if (budget?.info?.code) {
+          try {
+            await deleteDoc(doc(db, 'budgetCodes', budget.info.code))
+          } catch (e) {
+            // Ignore if code doc doesn't exist
+          }
+        }
+        // Remove from all members' sharedBudgets
+        const members = budget?.info?.members || []
+        for (const memberId of members) {
+          if (memberId === user.uid) continue
+          try {
+            const memberDoc = await getDoc(doc(db, 'users', memberId))
+            if (memberDoc.exists()) {
+              const memberData = memberDoc.data()
+              const updated = (memberData.sharedBudgets || []).filter(
+                sb => !(sb.budgetId === budgetId && sb.ownerId === user.uid)
+              )
+              await updateDoc(doc(db, 'users', memberId), { sharedBudgets: updated })
+            }
+          } catch (e) {
+            console.error('Error cleaning up member:', e)
+          }
+        }
+      } else {
+        // Not owner - just leave the budget
+        await updateDoc(doc(db, 'users', budgetOwnerId, 'budgets', budgetId), {
+          'info.members': arrayRemove(user.uid),
+          'info.admins': arrayRemove(user.uid)
+        })
+        const userDoc = await getDoc(doc(db, 'users', user.uid))
+        if (userDoc.exists()) {
+          const userData = userDoc.data()
+          const updated = (userData.sharedBudgets || []).filter(
+            sb => !(sb.budgetId === budgetId && sb.ownerId === budgetOwnerId)
+          )
+          await updateDoc(doc(db, 'users', user.uid), { sharedBudgets: updated })
+        }
+      }
+      onBack()
+    } catch (error) {
+      console.error('Error deleting budget:', error)
+      setDeleteBudgetError('Failed to delete budget. Please try again.')
+      setDeleteBudgetLoading(false)
     }
   }
 
@@ -440,13 +499,34 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
           <AlertTriangle className="h-5 w-5 text-rose-500" />
           <h3 className="font-semibold text-rose-900">Danger Zone</h3>
         </div>
-        <p className="text-sm text-rose-700 mb-4">
-          Once you delete your account, there is no going back.
-        </p>
-        <button onClick={() => setShowDeleteModal(true)} className="btn-danger text-sm">
-          <Trash2 className="h-4 w-4" />
-          Delete Account
-        </button>
+
+        <div className="space-y-4">
+          <div className="bg-rose-50 rounded-xl p-4">
+            <p className="text-sm font-medium text-rose-800 mb-1">
+              {budget?.info?.createdBy === user.uid ? 'Delete this budget' : 'Leave this budget'}
+            </p>
+            <p className="text-xs text-rose-600 mb-3">
+              {budget?.info?.createdBy === user.uid
+                ? 'This will permanently delete the budget and remove all members.'
+                : 'You will be removed from this shared budget.'}
+            </p>
+            <button onClick={() => setShowDeleteBudgetModal(true)} className="btn-danger text-sm">
+              <Trash2 className="h-4 w-4" />
+              {budget?.info?.createdBy === user.uid ? 'Delete Budget' : 'Leave Budget'}
+            </button>
+          </div>
+
+          <div className="bg-rose-50 rounded-xl p-4">
+            <p className="text-sm font-medium text-rose-800 mb-1">Delete your account</p>
+            <p className="text-xs text-rose-600 mb-3">
+              Once you delete your account, there is no going back.
+            </p>
+            <button onClick={() => setShowDeleteModal(true)} className="btn-danger text-sm">
+              <Trash2 className="h-4 w-4" />
+              Delete Account
+            </button>
+          </div>
+        </div>
       </div>
 
       {showShareModal && (
@@ -459,6 +539,17 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
           onConfirm={handleDeleteAccount}
           loading={deleteLoading}
           error={deleteError}
+        />
+      )}
+
+      {showDeleteBudgetModal && (
+        <DeleteBudgetModal
+          onClose={() => { setShowDeleteBudgetModal(false); setDeleteBudgetError('') }}
+          onConfirm={handleDeleteBudget}
+          loading={deleteBudgetLoading}
+          error={deleteBudgetError}
+          isOwner={budget?.info?.createdBy === user.uid}
+          budgetName={budgetName}
         />
       )}
 
@@ -629,6 +720,79 @@ function ManageUsersModal({ onClose, users, loading, currentUserId, onRemoveUser
 
         <div className="p-4 border-t border-slate-100 flex-shrink-0">
           <button onClick={onClose} className="btn-secondary w-full">Close</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DeleteBudgetModal({ onClose, onConfirm, loading, error, isOwner, budgetName }) {
+  const [confirmText, setConfirmText] = useState('')
+  const canDelete = confirmText === 'DELETE'
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-content">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
+          <div className="p-2 bg-rose-100 rounded-xl">
+            <AlertTriangle className="h-5 w-5 text-rose-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-slate-900">
+            {isOwner ? 'Delete Budget' : 'Leave Budget'}
+          </h3>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div className="text-sm text-slate-600 space-y-2">
+            {isOwner ? (
+              <>
+                <p>This will permanently delete <strong>{budgetName}</strong>:</p>
+                <ul className="list-disc list-inside space-y-1 ml-2 text-slate-500">
+                  <li>All expenses, income, and settings</li>
+                  <li>All members will lose access</li>
+                  <li>The budget sharing code will stop working</li>
+                </ul>
+              </>
+            ) : (
+              <p>You will be removed from <strong>{budgetName}</strong> and lose access to all its data.</p>
+            )}
+          </div>
+
+          {error && <div className="alert alert-danger"><span className="text-sm">{error}</span></div>}
+
+          <div>
+            <label className="input-label">Type DELETE to confirm</label>
+            <input
+              type="text"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              className="input"
+              placeholder="Type DELETE here"
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={onConfirm}
+              disabled={!canDelete || loading}
+              className="btn-danger flex-1"
+            >
+              {loading ? (
+                <>
+                  <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  {isOwner ? 'Deleting...' : 'Leaving...'}
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4" />
+                  {isOwner ? 'Delete Budget' : 'Leave Budget'}
+                </>
+              )}
+            </button>
+            <button onClick={onClose} disabled={loading} className="btn-secondary flex-1">
+              Cancel
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { TrendingUp, TrendingDown, DollarSign, ChevronDown, ChevronUp, PieChart, BarChart3, Table, AlertTriangle, Clock, CalendarClock, Bell, CreditCard, Zap, Wallet, PiggyBank } from 'lucide-react'
+import InfoTooltip from './InfoTooltip'
 import { PieChart as RechartsPieChart, Pie, Cell, Sector, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 
 export default function Dashboard({ expenses, salaries, people, categories, settings }) {
@@ -274,7 +275,10 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
       {/* Header with view mode */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">Dashboard</h2>
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-2xl font-bold text-slate-900">Dashboard</h2>
+            <InfoTooltip text="Your financial overview showing income, expenses, savings, and disposable income. Use the period selector to view amounts weekly, fortnightly, monthly, or yearly." />
+          </div>
           <p className="text-sm text-slate-500 mt-1">Your financial overview at a glance</p>
         </div>
         <div className="flex bg-white rounded-xl border border-slate-200 p-1 shadow-sm">
@@ -302,6 +306,7 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
               <Bell className="h-4 w-4 text-amber-600" />
             </div>
             <h3 className="font-semibold text-slate-900">Alerts & Reminders</h3>
+            <InfoTooltip text="Smart alerts for upcoming payments, overdue bills, expiring subscriptions, and price changes. Based on dates you set on your expenses." />
             <span className="badge badge-warning">{notifications.length}</span>
           </div>
           <div className="space-y-2.5 max-h-60 overflow-y-auto">
@@ -380,6 +385,7 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
       <div className="card p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-slate-900">Expenses by Category</h3>
+            <InfoTooltip text="Breakdown of expenses by category. Switch between table, pie chart, and bar chart views. Click categories in table view to see individual items." />
             <div className="flex bg-slate-100 rounded-lg p-0.5">
               {chartTypes.map(type => (
                 <button
