@@ -519,7 +519,8 @@ export default function BillAllocation({
                 const nextDue = expense.nextDueDate ? new Date(expense.nextDueDate) : null
                 const today = new Date()
                 today.setHours(0, 0, 0, 0)
-                const isOverdue = nextDue && nextDue < today
+                const isAutoPay = expense.paymentType === 'direct_debit' || expense.paymentType === 'standing_order'
+                const isOverdue = nextDue && nextDue < today && !isAutoPay
 
                 return (
                   <tr key={expense.id} className={`hover:bg-slate-50/50 transition-colors ${isOverdue ? 'bg-rose-50/30' : ''}`}>
@@ -592,7 +593,8 @@ export default function BillAllocation({
             const nextDue = expense.nextDueDate ? new Date(expense.nextDueDate) : null
             const today = new Date()
             today.setHours(0, 0, 0, 0)
-            const isOverdue = nextDue && nextDue < today
+            const isAutoPay = expense.paymentType === 'direct_debit' || expense.paymentType === 'standing_order'
+            const isOverdue = nextDue && nextDue < today && !isAutoPay
 
             return (
               <div key={expense.id} className={`p-4 ${isOverdue ? 'bg-rose-50/30' : ''}`}>

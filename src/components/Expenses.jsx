@@ -202,8 +202,12 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
     const due = new Date(expense.nextDueDate)
     due.setHours(0, 0, 0, 0)
     const days = Math.ceil((due - today) / (1000 * 60 * 60 * 24))
+    const isAutoPay = expense.paymentType === 'direct_debit' || expense.paymentType === 'standing_order'
 
-    if (days < 0) return { text: `${Math.abs(days)}d overdue`, className: 'text-rose-600 font-semibold' }
+    if (days < 0) {
+      if (isAutoPay) return { text: 'Auto-paid', className: 'text-emerald-500' }
+      return { text: `${Math.abs(days)}d overdue`, className: 'text-rose-600 font-semibold' }
+    }
     if (days === 0) return { text: 'Due today', className: 'text-amber-600 font-semibold' }
     if (days <= 7) return { text: `${days}d`, className: 'text-amber-500' }
     return { text: `${days}d`, className: 'text-slate-400' }

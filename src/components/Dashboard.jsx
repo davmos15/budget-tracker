@@ -82,7 +82,9 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
         dueDate.setHours(0, 0, 0, 0)
         const daysUntil = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24))
 
-        if (daysUntil < 0) {
+        const isAutoPay = expense.paymentType === 'direct_debit' || expense.paymentType === 'standing_order'
+
+        if (daysUntil < 0 && !isAutoPay) {
           alerts.push({
             type: 'overdue',
             severity: 'danger',
@@ -91,7 +93,7 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
             detail: `Was due ${Math.abs(daysUntil)} day${Math.abs(daysUntil) !== 1 ? 's' : ''} ago - ${formatCurrency(expense.amount)}`,
             expense
           })
-        } else if (daysUntil <= 7) {
+        } else if (daysUntil <= 7 && daysUntil >= 0) {
           alerts.push({
             type: 'upcoming',
             severity: 'warning',
