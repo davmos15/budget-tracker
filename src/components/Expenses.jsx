@@ -47,17 +47,22 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
     return yearlyAmount / divisors[viewMode]
   }
 
-  // Calculate totals for all items (not just filtered)
+  // Calculate totals based on active filters
+  const hasActiveFilters = filterCategory || filterPerson || filterPaymentType || filterItemType || searchQuery
   const { totalExpenses, totalSavings, totalIncome, disposableIncome } = useMemo(() => {
-    const totalExpenses = expenses
+    const itemsToTotal = hasActiveFilters ? filteredExpenses : expenses
+    const totalExpenses = itemsToTotal
       .filter(e => (e.itemType || 'expense') === 'expense')
       .reduce((sum, e) => sum + calculateDisplayAmount(e.amount, e.frequency), 0)
-    const totalSavings = expenses
+    const totalSavings = itemsToTotal
       .filter(e => e.itemType === 'saving')
       .reduce((sum, e) => sum + calculateDisplayAmount(e.amount, e.frequency), 0)
     const yearlyMultipliers = { weekly: 52, fortnightly: 26, monthly: 12, quarterly: 4, yearly: 1 }
     const divisors = { weekly: 52, fortnightly: 26, monthly: 12, quarterly: 4, yearly: 1 }
-    const totalIncome = (salaries || []).reduce((sum, s) =>
+    const filteredSalaries = filterPerson
+      ? (salaries || []).filter(s => s.personId === parseInt(filterPerson))
+      : (salaries || [])
+    const totalIncome = filteredSalaries.reduce((sum, s) =>
       sum + (s.amount * (yearlyMultipliers[s.frequency] || 0)) / divisors[viewMode], 0
     )
     return {
@@ -66,7 +71,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
       totalIncome,
       disposableIncome: totalIncome - totalExpenses - totalSavings
     }
-  }, [expenses, salaries, viewMode])
+  }, [expenses, filteredExpenses, salaries, viewMode, hasActiveFilters, filterPerson])
 
   const filteredTotal = filteredExpenses.reduce((sum, e) =>
     sum + calculateDisplayAmount(e.amount, e.frequency), 0

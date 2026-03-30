@@ -21,11 +21,24 @@ service cloud.firestore {
           request.auth.uid in request.resource.data.info.admins;
 
         // Members can update, but only admins can modify members/admins lists
+        // Non-members can join (add themselves to members) if they only modify the members field
         allow update: if request.auth != null && (
-          request.auth.uid in resource.data.info.members &&
           (
-            !request.resource.data.info.diff(resource.data.info).affectedKeys().hasAny(['members', 'admins']) ||
-            (request.auth.uid in resource.data.info.admins || request.auth.uid == resource.data.info.createdBy)
+            // Existing members can update
+            request.auth.uid in resource.data.info.members &&
+            (
+              !request.resource.data.info.diff(resource.data.info).affectedKeys().hasAny(['members', 'admins']) ||
+              (request.auth.uid in resource.data.info.admins || request.auth.uid == resource.data.info.createdBy)
+            )
+          ) ||
+          (
+            // Non-members can join: only adding themselves to the members array, no other changes
+            !(request.auth.uid in resource.data.info.members) &&
+            request.resource.data.info.members.hasAll(resource.data.info.members) &&
+            request.resource.data.info.members.hasAny([request.auth.uid]) &&
+            request.resource.data.info.members.size() == resource.data.info.members.size() + 1 &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['info']) &&
+            request.resource.data.info.diff(resource.data.info).affectedKeys().hasOnly(['members'])
           )
         );
 

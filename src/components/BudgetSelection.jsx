@@ -191,7 +191,7 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
         sharedBudgets: arrayUnion({
           budgetId: budgetId,
           ownerId: ownerUserId,
-          joinedAt: serverTimestamp()
+          joinedAt: new Date().toISOString()
         })
       })
 
