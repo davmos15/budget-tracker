@@ -218,8 +218,6 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
     return { text: `${days}d`, className: 'text-slate-400' }
   }
 
-  const hasActiveFilters = filterCategory || filterPerson || filterPaymentType || filterItemType || searchQuery
-
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -230,18 +228,6 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
             <InfoTooltip text="Track all your recurring expenses and savings. Each item can have a category, payment type, frequency, and due dates. Use filters to find specific items. Items marked as 'Saving' are tracked separately from expenses." />
           </div>
           <p className="text-sm text-slate-500 mt-1">Manage your expenses and savings</p>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={() => setShowCategoryModal(true)} className="btn-secondary text-sm">
-            Categories
-          </button>
-          <button
-            onClick={() => { setEditingExpense(null); setShowAddModal(true) }}
-            className="btn-primary text-sm"
-          >
-            <Plus className="h-4 w-4" />
-            Add Item
-          </button>
         </div>
       </div>
 
@@ -281,6 +267,20 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
           </p>
           <p className="text-xs text-white/60 mt-1">per {periodLabels[viewMode]} after expenses & savings</p>
         </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2">
+        <button onClick={() => setShowCategoryModal(true)} className="btn-secondary text-sm">
+          Categories
+        </button>
+        <button
+          onClick={() => { setEditingExpense(null); setShowAddModal(true) }}
+          className="btn-primary text-sm"
+        >
+          <Plus className="h-4 w-4" />
+          Add Item
+        </button>
       </div>
 
       {/* Filters */}

@@ -1,12 +1,12 @@
 import { useState, useMemo } from 'react'
-import { TrendingUp, TrendingDown, DollarSign, ChevronDown, ChevronUp, PieChart, BarChart3, Table, AlertTriangle, Clock, CalendarClock, Bell, CreditCard, Zap, Wallet, PiggyBank } from 'lucide-react'
+import { TrendingUp, TrendingDown, DollarSign, ChevronDown, ChevronUp, PieChart, BarChart3, Table, AlertTriangle, Clock, CalendarClock, Bell, CreditCard, Zap, Wallet, PiggyBank, User } from 'lucide-react'
 import InfoTooltip from './InfoTooltip'
 import { PieChart as RechartsPieChart, Pie, Cell, Sector, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 
 export default function Dashboard({ expenses, salaries, people, categories, settings }) {
   const [viewMode, setViewMode] = useState('Monthly')
   const [expenseChartType, setExpenseChartType] = useState('pie')
-  const [expandedCategories, setExpandedCategories] = useState(new Set())
+  const [collapsedCategories, setCollapsedCategories] = useState(new Set())
   const [activePieIndex, setActivePieIndex] = useState(null)
 
   const viewModes = ['Weekly', 'Fortnightly', 'Monthly', 'Yearly']
@@ -168,12 +168,66 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
     return alerts
   }, [expenses, settings])
 
-  const toggleCategoryExpansion = (categoryId) => {
-    const newExpanded = new Set(expandedCategories)
-    if (newExpanded.has(categoryId)) newExpanded.delete(categoryId)
-    else newExpanded.add(categoryId)
-    setExpandedCategories(newExpanded)
+  const toggleCategoryCollapse = (key) => {
+    const next = new Set(collapsedCategories)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    setCollapsedCategories(next)
   }
+
+  // Per-person breakdown data
+  const personBreakdowns = useMemo(() => {
+    return people.map(person => {
+      const personSalaries = salaries.filter(s => s.personId === person.id)
+      const personIncome = personSalaries.reduce((sum, s) => sum + calculateYearlyAmount(s.amount, s.frequency), 0)
+
+      const personExpenses = expenses.filter(e => e.personId === person.id && (e.itemType || 'expense') === 'expense')
+      const personSavings = expenses.filter(e => e.personId === person.id && e.itemType === 'saving')
+
+      const expensesByCategory = categories
+        .map(cat => ({
+          ...cat,
+          items: personExpenses.filter(e => e.categoryId === cat.id).map(e => ({
+            ...e,
+            yearlyAmount: calculateYearlyAmount(e.amount, e.frequency)
+          })),
+          yearlyTotal: personExpenses.filter(e => e.categoryId === cat.id)
+            .reduce((sum, e) => sum + calculateYearlyAmount(e.amount, e.frequency), 0)
+        }))
+        .filter(cat => cat.items.length > 0)
+
+      const savingsByCategory = categories
+        .map(cat => ({
+          ...cat,
+          items: personSavings.filter(e => e.categoryId === cat.id).map(e => ({
+            ...e,
+            yearlyAmount: calculateYearlyAmount(e.amount, e.frequency)
+          })),
+          yearlyTotal: personSavings.filter(e => e.categoryId === cat.id)
+            .reduce((sum, e) => sum + calculateYearlyAmount(e.amount, e.frequency), 0)
+        }))
+        .filter(cat => cat.items.length > 0)
+
+      // Savings without a category
+      const uncategorizedSavings = personSavings.filter(e => !e.categoryId || !categories.find(c => c.id === e.categoryId))
+        .map(e => ({ ...e, yearlyAmount: calculateYearlyAmount(e.amount, e.frequency) }))
+
+      const totalPersonExpenses = personExpenses.reduce((sum, e) => sum + calculateYearlyAmount(e.amount, e.frequency), 0)
+      const totalPersonSavings = personSavings.reduce((sum, e) => sum + calculateYearlyAmount(e.amount, e.frequency), 0)
+
+      return {
+        person,
+        salaries: personSalaries,
+        personIncome,
+        expensesByCategory,
+        savingsByCategory,
+        uncategorizedSavings,
+        totalPersonExpenses,
+        totalPersonSavings,
+        disposable: personIncome - totalPersonExpenses - totalPersonSavings
+      }
+    })
+  }, [expenses, salaries, people, categories])
 
   const expenseChartData = categories
     .filter(c => expensesByCategory[c.id]?.amount > 0)
@@ -182,6 +236,21 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
       value: Math.round(getAmountForPeriod(expensesByCategory[c.id]?.amount || 0) * 100) / 100,
       color: c.color
     }))
+
+  const savingsChartData = useMemo(() => {
+    const savingsByCategory = {}
+    expenses.filter(e => e.itemType === 'saving').forEach(e => {
+      const cat = categories.find(c => c.id === e.categoryId)
+      const catName = cat?.name || 'Other'
+      const catColor = cat?.color || '#94a3b8'
+      if (!savingsByCategory[catName]) savingsByCategory[catName] = { name: catName, value: 0, color: catColor }
+      savingsByCategory[catName].value += calculateYearlyAmount(e.amount, e.frequency)
+    })
+    return Object.values(savingsByCategory).map(d => ({
+      ...d,
+      value: Math.round(getAmountForPeriod(d.value) * 100) / 100
+    })).filter(d => d.value > 0)
+  }, [expenses, categories, viewMode])
 
   const renderActiveShape = (props) => {
     const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, payload, value } = props
@@ -383,87 +452,214 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
         </div>
       </div>
 
-      {/* Expenses by Category */}
-      <div className="card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-slate-900">Expenses by Category</h3>
-            <InfoTooltip text="Breakdown of expenses by category. Switch between table, pie chart, and bar chart views. Click categories in table view to see individual items." />
-            <div className="flex bg-slate-100 rounded-lg p-0.5">
-              {chartTypes.map(type => (
-                <button
-                  key={type.id}
-                  onClick={() => setExpenseChartType(type.id)}
-                  className={`p-1.5 rounded-md transition-all ${
-                    expenseChartType === type.id
-                      ? 'bg-white shadow-sm text-brand-600'
-                      : 'text-slate-400 hover:text-slate-600'
-                  }`}
-                  title={type.label}
-                >
-                  <type.icon className="h-3.5 w-3.5" />
-                </button>
-              ))}
+      {/* Two-column breakdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Left: Per-person breakdown table */}
+        <div className="card p-5 overflow-hidden">
+          <div className="flex items-center gap-2 mb-4">
+            <h3 className="font-semibold text-slate-900">Breakdown by Person</h3>
+            <InfoTooltip text="Income, expenses, and savings broken down by person and category. Click a category header to collapse or expand it." />
+          </div>
+          <div className="space-y-6 max-h-[600px] overflow-y-auto pr-1">
+            {personBreakdowns.map(({ person, salaries: personSalaries, personIncome, expensesByCategory: personExpCats, savingsByCategory: personSavCats, uncategorizedSavings, totalPersonExpenses, totalPersonSavings, disposable }) => (
+              <div key={person.id}>
+                {/* Person header */}
+                <div className="flex items-center gap-2.5 mb-3 pb-2 border-b border-slate-200">
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: person.color }}>
+                    {person.name.charAt(0)}
+                  </div>
+                  <h4 className="font-semibold text-slate-900">{person.name}</h4>
+                </div>
+
+                {/* Income */}
+                {personSalaries.length > 0 && (
+                  <div className="mb-3">
+                    <div
+                      className="flex items-center justify-between cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded-lg transition-colors"
+                      onClick={() => toggleCategoryCollapse(`${person.id}-income`)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
+                        <span className="text-sm font-medium text-emerald-700">Income</span>
+                        {collapsedCategories.has(`${person.id}-income`)
+                          ? <ChevronDown className="h-3 w-3 text-slate-400" />
+                          : <ChevronUp className="h-3 w-3 text-slate-400" />
+                        }
+                      </div>
+                      <span className="text-sm font-semibold text-emerald-700">{formatCurrency(getAmountForPeriod(personIncome))}</span>
+                    </div>
+                    {!collapsedCategories.has(`${person.id}-income`) && (
+                      <div className="ml-6 mt-1 space-y-0.5 border-l-2 border-emerald-200 pl-3">
+                        {personSalaries.map(s => (
+                          <div key={s.id} className="flex items-center justify-between text-xs py-0.5">
+                            <span className="text-slate-600">{s.name || 'Salary'}</span>
+                            <span className="text-slate-700 font-medium">{formatCurrency(getAmountForPeriod(calculateYearlyAmount(s.amount, s.frequency)))}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Expenses by category */}
+                {personExpCats.length > 0 && (
+                  <div className="mb-3">
+                    <div className="flex items-center gap-2 px-2 mb-1">
+                      <TrendingDown className="h-3.5 w-3.5 text-rose-500" />
+                      <span className="text-xs font-semibold text-rose-600 uppercase tracking-wide">Expenses</span>
+                    </div>
+                    {personExpCats.map(cat => {
+                      const key = `${person.id}-exp-${cat.id}`
+                      return (
+                        <div key={cat.id} className="mb-1">
+                          <div
+                            className="flex items-center justify-between cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded-lg transition-colors"
+                            onClick={() => toggleCategoryCollapse(key)}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
+                              <span className="text-sm font-medium text-slate-700 truncate">{cat.name}</span>
+                              <span className="text-[10px] text-slate-400">{cat.items.length}</span>
+                              {collapsedCategories.has(key)
+                                ? <ChevronDown className="h-3 w-3 text-slate-400" />
+                                : <ChevronUp className="h-3 w-3 text-slate-400" />
+                              }
+                            </div>
+                            <span className="text-sm font-semibold text-slate-900 ml-2 flex-shrink-0">{formatCurrency(getAmountForPeriod(cat.yearlyTotal))}</span>
+                          </div>
+                          {!collapsedCategories.has(key) && (
+                            <div className="ml-6 mt-0.5 space-y-0.5 border-l-2 pl-3" style={{ borderColor: cat.color + '40' }}>
+                              {cat.items.map(item => (
+                                <div key={item.id} className="flex items-center justify-between text-xs py-0.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-slate-600">{item.name}</span>
+                                    {item.paymentType && (
+                                      <span className="text-slate-400 text-[10px]">
+                                        {item.paymentType === 'direct_debit' ? 'DD' : item.paymentType === 'standing_order' ? 'SO' : item.paymentType === 'manual' ? 'Manual' : 'Card'}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-slate-700 font-medium">{formatCurrency(getAmountForPeriod(item.yearlyAmount))}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Savings by category */}
+                {(personSavCats.length > 0 || uncategorizedSavings.length > 0) && (
+                  <div className="mb-3">
+                    <div className="flex items-center gap-2 px-2 mb-1">
+                      <PiggyBank className="h-3.5 w-3.5 text-violet-500" />
+                      <span className="text-xs font-semibold text-violet-600 uppercase tracking-wide">Savings</span>
+                    </div>
+                    {personSavCats.map(cat => {
+                      const key = `${person.id}-sav-${cat.id}`
+                      return (
+                        <div key={cat.id} className="mb-1">
+                          <div
+                            className="flex items-center justify-between cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded-lg transition-colors"
+                            onClick={() => toggleCategoryCollapse(key)}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
+                              <span className="text-sm font-medium text-slate-700 truncate">{cat.name}</span>
+                              <span className="text-[10px] text-slate-400">{cat.items.length}</span>
+                              {collapsedCategories.has(key)
+                                ? <ChevronDown className="h-3 w-3 text-slate-400" />
+                                : <ChevronUp className="h-3 w-3 text-slate-400" />
+                              }
+                            </div>
+                            <span className="text-sm font-semibold text-slate-900 ml-2 flex-shrink-0">{formatCurrency(getAmountForPeriod(cat.yearlyTotal))}</span>
+                          </div>
+                          {!collapsedCategories.has(key) && (
+                            <div className="ml-6 mt-0.5 space-y-0.5 border-l-2 pl-3" style={{ borderColor: cat.color + '40' }}>
+                              {cat.items.map(item => (
+                                <div key={item.id} className="flex items-center justify-between text-xs py-0.5">
+                                  <span className="text-slate-600">{item.name}</span>
+                                  <span className="text-slate-700 font-medium">{formatCurrency(getAmountForPeriod(item.yearlyAmount))}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                    {uncategorizedSavings.length > 0 && (
+                      <div className="ml-6 space-y-0.5 border-l-2 border-violet-200 pl-3">
+                        {uncategorizedSavings.map(item => (
+                          <div key={item.id} className="flex items-center justify-between text-xs py-0.5">
+                            <span className="text-slate-600">{item.name}</span>
+                            <span className="text-slate-700 font-medium">{formatCurrency(getAmountForPeriod(item.yearlyAmount))}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Person totals */}
+                <div className="bg-slate-50 rounded-xl px-3 py-2 mt-2 space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Expenses</span>
+                    <span className="text-rose-600 font-medium">-{formatCurrency(getAmountForPeriod(totalPersonExpenses))}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Savings</span>
+                    <span className="text-violet-600 font-medium">-{formatCurrency(getAmountForPeriod(totalPersonSavings))}</span>
+                  </div>
+                  <div className="flex justify-between text-sm font-semibold border-t border-slate-200 pt-1 mt-1">
+                    <span className="text-slate-700">Disposable</span>
+                    <span className={disposable >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
+                      {disposable < 0 ? '-' : ''}{formatCurrency(getAmountForPeriod(disposable))}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Right: Charts */}
+        <div className="space-y-6">
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-slate-900">Expenses by Category</h3>
+              <div className="flex bg-slate-100 rounded-lg p-0.5">
+                {chartTypes.filter(t => t.id !== 'table').map(type => (
+                  <button
+                    key={type.id}
+                    onClick={() => setExpenseChartType(type.id)}
+                    className={`p-1.5 rounded-md transition-all ${
+                      expenseChartType === type.id
+                        ? 'bg-white shadow-sm text-brand-600'
+                        : 'text-slate-400 hover:text-slate-600'
+                    }`}
+                    title={type.label}
+                  >
+                    <type.icon className="h-3.5 w-3.5" />
+                  </button>
+                ))}
+              </div>
             </div>
+            {renderChart(expenseChartData, expenseChartType)}
           </div>
 
-          {expenseChartType === 'table' ? (
-            <div className="space-y-2.5 max-h-72 overflow-y-auto">
-              {categories
-                .filter(c => expensesByCategory[c.id]?.amount > 0)
-                .sort((a, b) => (expensesByCategory[b.id]?.amount || 0) - (expensesByCategory[a.id]?.amount || 0))
-                .map(category => {
-                  const amount = getAmountForPeriod(expensesByCategory[category.id]?.amount || 0)
-                  const percentage = totalExpenses > 0 ? ((expensesByCategory[category.id]?.amount || 0) / totalExpenses * 100) : 0
-                  return (
-                    <div key={category.id}>
-                      <div
-                        className="flex items-center justify-between cursor-pointer hover:bg-slate-50 p-2 rounded-xl transition-colors"
-                        onClick={() => toggleCategoryExpansion(category.id)}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: category.color }} />
-                          <span className="text-sm font-medium text-slate-700 truncate">{category.name}</span>
-                          <span className="badge badge-brand">{expensesByCategory[category.id]?.count || 0}</span>
-                          {expandedCategories.has(category.id)
-                            ? <ChevronUp className="h-3.5 w-3.5 text-slate-400" />
-                            : <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
-                          }
-                        </div>
-                        <div className="text-right ml-3 flex-shrink-0">
-                          <p className="text-sm font-semibold text-slate-900">{formatCurrency(amount)}</p>
-                          <p className="text-xs text-slate-400">{percentage.toFixed(1)}%</p>
-                        </div>
-                      </div>
-
-                      {expandedCategories.has(category.id) && (
-                        <div className="ml-7 mt-1 space-y-1 border-l-2 pl-4 animate-slide-down" style={{ borderColor: category.color + '40' }}>
-                          {expensesByCategoryDetailed[category.id]?.map(expense => {
-                            const person = people.find(p => p.id === expense.personId)
-                            return (
-                              <div key={expense.id} className="flex items-center justify-between text-xs py-1">
-                                <div className="flex items-center gap-2">
-                                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: person?.color }} />
-                                  <span className="text-slate-600">{expense.name}</span>
-                                  {expense.paymentType && (
-                                    <span className="text-slate-400 text-[10px]">
-                                      {expense.paymentType === 'direct_debit' ? 'DD' : expense.paymentType === 'standing_order' ? 'SO' : expense.paymentType === 'manual' ? 'Manual' : 'Card'}
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="text-slate-700 font-medium">
-                                  {formatCurrency(getAmountForPeriod(expense.yearlyAmount))}
-                                </span>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
+          {/* Savings chart */}
+          {savingsChartData.length > 0 && (
+            <div className="card p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-slate-900">Savings by Category</h3>
+              </div>
+              {renderChart(savingsChartData, 'pie')}
             </div>
-          ) : renderChart(expenseChartData, expenseChartType)}
+          )}
         </div>
+      </div>
     </div>
   )
 }
