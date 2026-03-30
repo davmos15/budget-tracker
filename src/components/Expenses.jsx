@@ -73,10 +73,6 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
     }
   }, [expenses, filteredExpenses, salaries, viewMode, hasActiveFilters, filterPerson])
 
-  const filteredTotal = filteredExpenses.reduce((sum, e) =>
-    sum + calculateDisplayAmount(e.amount, e.frequency), 0
-  )
-
   const handleSort = (key) => {
     if (sortKey === key) {
       setSortDir(sortDir === 'asc' ? 'desc' : 'asc')

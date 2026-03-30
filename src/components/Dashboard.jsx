@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { TrendingUp, TrendingDown, DollarSign, ChevronDown, ChevronUp, PieChart, BarChart3, Table, AlertTriangle, Clock, CalendarClock, Bell, CreditCard, Zap, Wallet, PiggyBank, User } from 'lucide-react'
+import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, PieChart, BarChart3, AlertTriangle, Clock, CalendarClock, Bell, CreditCard, Zap, Wallet, PiggyBank } from 'lucide-react'
 import InfoTooltip from './InfoTooltip'
 import { PieChart as RechartsPieChart, Pie, Cell, Sector, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 
@@ -12,7 +12,6 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
   const viewModes = ['Weekly', 'Fortnightly', 'Monthly', 'Yearly']
   const periodLabels = { Weekly: 'week', Fortnightly: 'fortnight', Monthly: 'month', Yearly: 'year' }
   const chartTypes = [
-    { id: 'table', icon: Table, label: 'Table' },
     { id: 'pie', icon: PieChart, label: 'Pie Chart' },
     { id: 'bar', icon: BarChart3, label: 'Bar Chart' }
   ]
@@ -22,18 +21,12 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
     return amount * (multipliers[frequency] || 0)
   }
 
-  const { totalIncome, totalExpenses, totalSavingsAmt, netSavings, incomeByPerson, expensesByCategory, expensesByCategoryDetailed } = useMemo(() => {
+  const { totalIncome, totalExpenses, totalSavingsAmt, netSavings, expensesByCategory } = useMemo(() => {
     const totalIncome = salaries.reduce((sum, s) => sum + calculateYearlyAmount(s.amount, s.frequency), 0)
     const totalExpenses = expenses.filter(e => (e.itemType || 'expense') === 'expense')
       .reduce((sum, e) => sum + calculateYearlyAmount(e.amount, e.frequency), 0)
     const totalSavingsAmt = expenses.filter(e => e.itemType === 'saving')
       .reduce((sum, e) => sum + calculateYearlyAmount(e.amount, e.frequency), 0)
-
-    const incomeByPerson = people.reduce((acc, person) => {
-      acc[person.id] = salaries.filter(s => s.personId === person.id)
-        .reduce((sum, s) => sum + calculateYearlyAmount(s.amount, s.frequency), 0)
-      return acc
-    }, {})
 
     const expenseOnly = expenses.filter(e => (e.itemType || 'expense') === 'expense')
 
@@ -46,16 +39,8 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
       return acc
     }, {})
 
-    const expensesByCategoryDetailed = categories.reduce((acc, cat) => {
-      acc[cat.id] = expenseOnly.filter(e => e.categoryId === cat.id).map(e => ({
-        ...e,
-        yearlyAmount: calculateYearlyAmount(e.amount, e.frequency)
-      }))
-      return acc
-    }, {})
-
-    return { totalIncome, totalExpenses, totalSavingsAmt, netSavings: totalIncome - totalExpenses - totalSavingsAmt, incomeByPerson, expensesByCategory, expensesByCategoryDetailed }
-  }, [expenses, salaries, people, categories])
+    return { totalIncome, totalExpenses, totalSavingsAmt, netSavings: totalIncome - totalExpenses - totalSavingsAmt, expensesByCategory }
+  }, [expenses, salaries, categories])
 
   const getAmountForPeriod = (yearlyAmount) => {
     const divisors = { 'Weekly': 52, 'Fortnightly': 26, 'Monthly': 12, 'Yearly': 1 }
@@ -630,7 +615,7 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-slate-900">Expenses by Category</h3>
               <div className="flex bg-slate-100 rounded-lg p-0.5">
-                {chartTypes.filter(t => t.id !== 'table').map(type => (
+                {chartTypes.map(type => (
                   <button
                     key={type.id}
                     onClick={() => setExpenseChartType(type.id)}

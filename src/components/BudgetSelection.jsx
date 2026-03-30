@@ -19,6 +19,14 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
       const userDocRef = doc(db, 'users', user.uid)
       const userDoc = await getDoc(userDocRef)
 
+      // Always update the email lookup for invite-by-email
+      const emailKey = user.email.toLowerCase()
+      setDoc(doc(db, 'userEmails', emailKey), {
+        uid: user.uid,
+        email: user.email,
+        name: user.displayName || user.email
+      }, { merge: true }).catch(() => {})
+
       if (!userDoc.exists()) {
         await setDoc(userDocRef, {
           email: user.email,

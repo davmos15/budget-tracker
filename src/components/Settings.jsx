@@ -208,6 +208,38 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
     }
   }
 
+  const inviteByEmail = async (email) => {
+    // Look up user by email
+    const emailDoc = await getDoc(doc(db, 'userEmails', email))
+    if (!emailDoc.exists()) {
+      throw new Error('No account found with that email. They must sign in at least once first.')
+    }
+
+    const { uid: invitedUserId, name: invitedName } = emailDoc.data()
+
+    // Check if already a member
+    if (budget?.info?.members?.includes(invitedUserId)) {
+      throw new Error('This user is already a member of this budget')
+    }
+
+    // Add to budget members
+    await updateDoc(doc(db, 'users', budgetOwnerId, 'budgets', budgetId), {
+      'info.members': arrayUnion(invitedUserId)
+    })
+
+    // Add to user's sharedBudgets
+    await updateDoc(doc(db, 'users', invitedUserId), {
+      sharedBudgets: arrayUnion({
+        budgetId: budgetId,
+        ownerId: budgetOwnerId,
+        joinedAt: new Date().toISOString()
+      })
+    })
+
+    // Refresh the user list
+    await loadBudgetUsers()
+  }
+
   const handleDeleteBudget = async () => {
     setDeleteBudgetLoading(true)
     setDeleteBudgetError('')
@@ -337,7 +369,7 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
               </div>
               <button
                 type="button"
-                onClick={() => setLocalSettings({ ...localSettings, showDashboardAlerts: !localSettings.showDashboardAlerts })}
+                onClick={() => setLocalSettings({ ...localSettings, showDashboardAlerts: localSettings.showDashboardAlerts === false ? true : false })}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                   localSettings.showDashboardAlerts !== false ? 'bg-brand-600' : 'bg-slate-300'
                 }`}
@@ -587,6 +619,7 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
           onRemoveUser={removeUserFromBudget}
           onToggleAdmin={toggleAdminStatus}
           isAdmin={isAdmin}
+          onInviteByEmail={inviteByEmail}
         />
       )}
     </div>
@@ -658,8 +691,27 @@ function DeleteAccountModal({ onClose, onConfirm, loading, error }) {
   )
 }
 
-function ManageUsersModal({ onClose, users, loading, currentUserId, onRemoveUser, onToggleAdmin, isAdmin }) {
+function ManageUsersModal({ onClose, users, loading, currentUserId, onRemoveUser, onToggleAdmin, isAdmin, onInviteByEmail }) {
   const [confirmRemove, setConfirmRemove] = useState(null)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteLoading, setInviteLoading] = useState(false)
+  const [inviteError, setInviteError] = useState('')
+  const [inviteSuccess, setInviteSuccess] = useState('')
+
+  const handleInvite = async (e) => {
+    e.preventDefault()
+    setInviteError('')
+    setInviteSuccess('')
+    setInviteLoading(true)
+    try {
+      await onInviteByEmail(inviteEmail.trim().toLowerCase())
+      setInviteSuccess(`Invited ${inviteEmail.trim()} successfully`)
+      setInviteEmail('')
+    } catch (err) {
+      setInviteError(err.message)
+    }
+    setInviteLoading(false)
+  }
 
   return (
     <div className="modal-overlay">
@@ -675,6 +727,29 @@ function ManageUsersModal({ onClose, users, loading, currentUserId, onRemoveUser
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
+          {/* Invite by email */}
+          {isAdmin && (
+            <div className="mb-5">
+              <h4 className="text-sm font-semibold text-slate-700 mb-2">Invite by Email</h4>
+              <form onSubmit={handleInvite} className="flex gap-2">
+                <input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => { setInviteEmail(e.target.value); setInviteError(''); setInviteSuccess('') }}
+                  className="input flex-1 py-2 text-sm"
+                  placeholder="Enter email address..."
+                  required
+                />
+                <button type="submit" disabled={inviteLoading || !inviteEmail.trim()} className="btn-primary text-sm whitespace-nowrap">
+                  {inviteLoading ? 'Adding...' : 'Add'}
+                </button>
+              </form>
+              {inviteError && <p className="text-xs text-rose-600 mt-1.5">{inviteError}</p>}
+              {inviteSuccess && <p className="text-xs text-emerald-600 mt-1.5">{inviteSuccess}</p>}
+              <p className="text-xs text-slate-400 mt-1">The user must have signed in at least once</p>
+            </div>
+          )}
+
           {loading ? (
             <div className="text-center py-8">
               <div className="h-8 w-8 border-2 border-brand-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
