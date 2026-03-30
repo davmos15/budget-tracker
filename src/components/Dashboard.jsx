@@ -301,7 +301,7 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
       </div>
 
       {/* Smart Notifications */}
-      {notifications.length > 0 && (
+      {settings.showDashboardAlerts !== false && notifications.length > 0 && (
         <div className="card p-5">
           <div className="flex items-center gap-2 mb-4">
             <div className="p-1.5 bg-amber-100 rounded-lg">

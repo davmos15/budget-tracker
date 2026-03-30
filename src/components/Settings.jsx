@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Save, Globe, Calendar, RefreshCw, User, Share2, Trash2, AlertTriangle, Users, Shield, UserMinus, Check, X } from 'lucide-react'
+import { Save, Globe, Calendar, RefreshCw, User, Share2, Trash2, AlertTriangle, Users, Shield, UserMinus, Check, X, Bell } from 'lucide-react'
 import { useFirebase } from '../contexts/FirebaseContext'
 import { auth, db } from '../firebase'
 import { deleteUser } from 'firebase/auth'
@@ -326,6 +326,31 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
             </select>
             <p className="text-xs text-slate-400 mt-1.5">
               Preview: {getDateFormatExample(localSettings.dateFormat)}
+            </p>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Bell className="h-4 w-4 text-slate-400" />
+                <label className="input-label mb-0">Dashboard Alerts & Reminders</label>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLocalSettings({ ...localSettings, showDashboardAlerts: !localSettings.showDashboardAlerts })}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  localSettings.showDashboardAlerts !== false ? 'bg-brand-600' : 'bg-slate-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    localSettings.showDashboardAlerts !== false ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            <p className="text-xs text-slate-400 mt-1.5">
+              Show upcoming payments, overdue bills, and other alerts on the dashboard
             </p>
           </div>
 
