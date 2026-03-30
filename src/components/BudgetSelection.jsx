@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { collection, doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp, getDocs } from 'firebase/firestore'
+import { collection, doc, getDoc, setDoc, updateDoc, deleteDoc, arrayUnion, serverTimestamp, getDocs } from 'firebase/firestore'
 import { db } from '../firebase'
 import { Plus, Share2, LogOut, Loader, FileText, Users, Wallet, ArrowRight, X } from 'lucide-react'
 
@@ -27,18 +27,57 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
         name: user.displayName || user.email
       }, { merge: true }).catch(() => {})
 
+      // Process any pending invites for this email
+      let pendingSharedBudgets = []
+      try {
+        const pendingRef = doc(db, 'pendingInvites', emailKey)
+        const pendingDoc = await getDoc(pendingRef)
+        if (pendingDoc.exists()) {
+          const { invites = [] } = pendingDoc.data()
+          for (const invite of invites) {
+            try {
+              await updateDoc(doc(db, 'users', invite.ownerId, 'budgets', invite.budgetId), {
+                'info.members': arrayUnion(user.uid)
+              })
+              pendingSharedBudgets.push({
+                budgetId: invite.budgetId,
+                ownerId: invite.ownerId,
+                joinedAt: new Date().toISOString()
+              })
+            } catch (err) {
+              console.error('Error processing pending invite:', err)
+            }
+          }
+          await deleteDoc(pendingRef)
+        }
+      } catch (err) {
+        console.error('Error checking pending invites:', err)
+      }
+
+      // Add pending invites to existing user's sharedBudgets
+      if (userDoc.exists() && pendingSharedBudgets.length > 0) {
+        for (const sb of pendingSharedBudgets) {
+          await updateDoc(userDocRef, { sharedBudgets: arrayUnion(sb) })
+        }
+      }
+
       if (!userDoc.exists()) {
         await setDoc(userDocRef, {
           email: user.email,
           name: user.displayName || user.email,
-          sharedBudgets: []
+          sharedBudgets: pendingSharedBudgets
         })
-        setBudgets([])
-        setLoading(false)
-        return
+        if (pendingSharedBudgets.length === 0) {
+          setBudgets([])
+          setLoading(false)
+          return
+        }
+        // Re-read to load the shared budgets we just added
       }
 
-      const userData = userDoc.data()
+      // Re-read user data if we may have modified it
+      const freshUserDoc = pendingSharedBudgets.length > 0 ? await getDoc(userDocRef) : userDoc
+      const userData = freshUserDoc.data()
       const allBudgets = []
 
       const ownBudgetsRef = collection(db, 'users', user.uid, 'budgets')

@@ -3,7 +3,7 @@ import { Save, Globe, Calendar, RefreshCw, User, Share2, Trash2, AlertTriangle, 
 import { useFirebase } from '../contexts/FirebaseContext'
 import { auth, db } from '../firebase'
 import { deleteUser } from 'firebase/auth'
-import { doc, getDoc, updateDoc, deleteDoc, arrayRemove, arrayUnion, collection, getDocs } from 'firebase/firestore'
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, arrayRemove, arrayUnion, collection, getDocs } from 'firebase/firestore'
 import ShareBudgetModal from './ShareBudgetModal'
 
 export default function SettingsPage({ settings, setSettings, people, budgetCode, budgetName, onBack }) {
@@ -211,33 +211,51 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
   const inviteByEmail = async (email) => {
     // Look up user by email
     const emailDoc = await getDoc(doc(db, 'userEmails', email))
-    if (!emailDoc.exists()) {
-      throw new Error('No account found with that email. They must sign in at least once first.')
-    }
 
-    const { uid: invitedUserId, name: invitedName } = emailDoc.data()
+    if (emailDoc.exists()) {
+      // User has an account — add them immediately
+      const { uid: invitedUserId } = emailDoc.data()
 
-    // Check if already a member
-    if (budget?.info?.members?.includes(invitedUserId)) {
-      throw new Error('This user is already a member of this budget')
-    }
+      if (budget?.info?.members?.includes(invitedUserId)) {
+        throw new Error('This user is already a member of this budget')
+      }
 
-    // Add to budget members
-    await updateDoc(doc(db, 'users', budgetOwnerId, 'budgets', budgetId), {
-      'info.members': arrayUnion(invitedUserId)
-    })
-
-    // Add to user's sharedBudgets
-    await updateDoc(doc(db, 'users', invitedUserId), {
-      sharedBudgets: arrayUnion({
-        budgetId: budgetId,
-        ownerId: budgetOwnerId,
-        joinedAt: new Date().toISOString()
+      await updateDoc(doc(db, 'users', budgetOwnerId, 'budgets', budgetId), {
+        'info.members': arrayUnion(invitedUserId)
       })
-    })
 
-    // Refresh the user list
-    await loadBudgetUsers()
+      await updateDoc(doc(db, 'users', invitedUserId), {
+        sharedBudgets: arrayUnion({
+          budgetId: budgetId,
+          ownerId: budgetOwnerId,
+          joinedAt: new Date().toISOString()
+        })
+      })
+
+      await loadBudgetUsers()
+      return 'added'
+    } else {
+      // User hasn't signed in yet — store a pending invite
+      const pendingRef = doc(db, 'pendingInvites', email)
+      const pendingDoc = await getDoc(pendingRef)
+      const existing = pendingDoc.exists() ? (pendingDoc.data().invites || []) : []
+
+      // Check if already invited to this budget
+      if (existing.some(inv => inv.budgetId === budgetId && inv.ownerId === budgetOwnerId)) {
+        throw new Error('This email has already been invited to this budget')
+      }
+
+      await setDoc(pendingRef, {
+        invites: arrayUnion({
+          budgetId: budgetId,
+          ownerId: budgetOwnerId,
+          budgetName: budgetName,
+          invitedBy: user.displayName || user.email,
+          invitedAt: new Date().toISOString()
+        })
+      }, { merge: true })
+      return 'pending'
+    }
   }
 
   const handleDeleteBudget = async () => {
@@ -704,8 +722,10 @@ function ManageUsersModal({ onClose, users, loading, currentUserId, onRemoveUser
     setInviteSuccess('')
     setInviteLoading(true)
     try {
-      await onInviteByEmail(inviteEmail.trim().toLowerCase())
-      setInviteSuccess(`Invited ${inviteEmail.trim()} successfully`)
+      const result = await onInviteByEmail(inviteEmail.trim().toLowerCase())
+      setInviteSuccess(result === 'pending'
+        ? `Invite saved — ${inviteEmail.trim()} will be added when they sign in`
+        : `Added ${inviteEmail.trim()} to the budget`)
       setInviteEmail('')
     } catch (err) {
       setInviteError(err.message)
@@ -746,7 +766,7 @@ function ManageUsersModal({ onClose, users, loading, currentUserId, onRemoveUser
               </form>
               {inviteError && <p className="text-xs text-rose-600 mt-1.5">{inviteError}</p>}
               {inviteSuccess && <p className="text-xs text-emerald-600 mt-1.5">{inviteSuccess}</p>}
-              <p className="text-xs text-slate-400 mt-1">The user must have signed in at least once</p>
+              <p className="text-xs text-slate-400 mt-1">If they haven't signed in yet, they'll be added automatically when they do</p>
             </div>
           )}
 
