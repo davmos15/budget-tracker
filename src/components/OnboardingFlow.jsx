@@ -92,7 +92,9 @@ export default function OnboardingFlow({ user, categories, settings, onComplete 
           categoryId: cat?.id || categories[0]?.id || 1,
           personId: 1,
           itemType: e.isSaving ? 'saving' : 'expense',
-          paymentType: 'direct_debit'
+          paymentType: 'direct_debit',
+          // Everyday spending usually comes out of a spending account, not the bills account
+          fromBillsAccount: !['Food', 'Entertainment'].includes(e.category)
         }
       })
 

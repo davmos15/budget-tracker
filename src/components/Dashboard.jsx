@@ -1,9 +1,11 @@
 import { useState, useMemo } from 'react'
 import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, PieChart, BarChart3, AlertTriangle, Clock, CalendarClock, Bell, CreditCard, Zap, Wallet, PiggyBank } from 'lucide-react'
 import InfoTooltip from './InfoTooltip'
+import { annualAmount, billStatus, billsSnapshot, formatMoney, isAutoPay, isBill, isActive, PERIOD_NOUN } from '../lib/finance'
+import { parseDate, diffDays, today as todayFn, formatShort, relativeDays } from '../lib/dates'
 import { PieChart as RechartsPieChart, Pie, Cell, Sector, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 
-export default function Dashboard({ expenses, salaries, people, categories, settings }) {
+export default function Dashboard({ expenses, salaries, people, categories, settings, staticAmounts = [], onOpenBills }) {
   const [viewMode, setViewMode] = useState('Monthly')
   const [expenseChartType, setExpenseChartType] = useState('pie')
   const [collapsedCategories, setCollapsedCategories] = useState(new Set())
@@ -16,24 +18,28 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
     { id: 'bar', icon: BarChart3, label: 'Bar Chart' }
   ]
 
-  const calculateYearlyAmount = (amount, frequency) => {
-    const multipliers = { weekly: 52, fortnightly: 26, monthly: 12, quarterly: 4, yearly: 1 }
-    return amount * (multipliers[frequency] || 0)
-  }
+  // Yearly amount for an item — 0 if paused/ended, uses a price change once it's in force
+  const yearly = (item) => annualAmount(item)
+
+  const snap = useMemo(() => billsSnapshot({
+    expenses, people, salaries, settings, staticAmounts,
+    balance: settings.billsAccountBalance,
+    cardOwing: settings.cardOwing
+  }), [expenses, people, salaries, settings, staticAmounts])
 
   const { totalIncome, totalExpenses, totalSavingsAmt, netSavings, expensesByCategory } = useMemo(() => {
-    const totalIncome = salaries.reduce((sum, s) => sum + calculateYearlyAmount(s.amount, s.frequency), 0)
+    const totalIncome = salaries.reduce((sum, s) => sum + yearly(s), 0)
     const totalExpenses = expenses.filter(e => (e.itemType || 'expense') === 'expense')
-      .reduce((sum, e) => sum + calculateYearlyAmount(e.amount, e.frequency), 0)
+      .reduce((sum, e) => sum + yearly(e), 0)
     const totalSavingsAmt = expenses.filter(e => e.itemType === 'saving')
-      .reduce((sum, e) => sum + calculateYearlyAmount(e.amount, e.frequency), 0)
+      .reduce((sum, e) => sum + yearly(e), 0)
 
     const expenseOnly = expenses.filter(e => (e.itemType || 'expense') === 'expense')
 
     const expensesByCategory = categories.reduce((acc, cat) => {
       const catExpenses = expenseOnly.filter(e => e.categoryId === cat.id)
       acc[cat.id] = {
-        amount: catExpenses.reduce((sum, e) => sum + calculateYearlyAmount(e.amount, e.frequency), 0),
+        amount: catExpenses.reduce((sum, e) => sum + yearly(e), 0),
         count: catExpenses.length
       }
       return acc
@@ -47,62 +53,73 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
     return yearlyAmount / divisors[viewMode]
   }
 
-  const formatCurrency = (amount) => {
-    return `${settings.currency || '$'}${Math.abs(amount).toLocaleString('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })}`
-  }
+  const formatCurrency = (amount) => formatMoney(Math.abs(amount), settings.currency || '$')
 
   // Smart notifications
   const notifications = useMemo(() => {
     const alerts = []
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
+    const today = todayFn()
+
+    // Bills account health
+    if (snap.surplus !== null && snap.surplus < -1) {
+      alerts.push({
+        type: 'shortfall',
+        severity: 'danger',
+        icon: Wallet,
+        title: `Bills account is ${formatCurrency(snap.surplus)} short`,
+        detail: 'Top it up to stay on track — see the Bills tab'
+      })
+    }
+    if (settings.billsBalanceUpdated && diffDays(settings.billsBalanceUpdated, today) > 7) {
+      alerts.push({
+        type: 'stale',
+        severity: 'info',
+        icon: Clock,
+        title: 'Bills account balance is out of date',
+        detail: `Last entered ${diffDays(settings.billsBalanceUpdated, today)} days ago — update it on the Bills tab`
+      })
+    }
 
     expenses.forEach(expense => {
-      // Upcoming payments (next 7 days)
-      if (expense.nextDueDate) {
-        const dueDate = new Date(expense.nextDueDate)
-        dueDate.setHours(0, 0, 0, 0)
-        const daysUntil = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24))
+      if (!isActive(expense, today)) return
 
-        const isAutoPay = expense.paymentType === 'direct_debit' || expense.paymentType === 'standing_order'
-
-        if (daysUntil < 0 && !isAutoPay) {
-          alerts.push({
-            type: 'overdue',
-            severity: 'danger',
-            icon: AlertTriangle,
-            title: `${expense.name} is overdue`,
-            detail: `Was due ${Math.abs(daysUntil)} day${Math.abs(daysUntil) !== 1 ? 's' : ''} ago - ${formatCurrency(expense.amount)}`,
-            expense
-          })
-        } else if (daysUntil <= 7 && daysUntil >= 0) {
-          alerts.push({
-            type: 'upcoming',
-            severity: 'warning',
-            icon: CalendarClock,
-            title: `${expense.name} due ${daysUntil === 0 ? 'today' : daysUntil === 1 ? 'tomorrow' : `in ${daysUntil} days`}`,
-            detail: `${formatCurrency(expense.amount)} - ${expense.paymentType === 'direct_debit' ? 'Auto-pay' : 'Manual payment needed'}`,
-            expense
-          })
+      if (isBill(expense)) {
+        const st = billStatus(expense, today)
+        if (st.scheduled) {
+          if (st.overdue) {
+            alerts.push({
+              type: 'overdue',
+              severity: 'danger',
+              icon: AlertTriangle,
+              title: `${expense.name} is overdue`,
+              detail: `Was due ${formatShort(st.nextDue)} (${st.daysOverdue} day${st.daysOverdue !== 1 ? 's' : ''} ago) - ${formatCurrency(st.amount)}`,
+              expense
+            })
+          } else if (st.daysUntilDue <= 7) {
+            const manual = !isAutoPay(expense)
+            alerts.push({
+              type: manual ? 'manual_transfer' : 'upcoming',
+              severity: manual ? 'warning' : 'info',
+              icon: manual ? CreditCard : CalendarClock,
+              title: `${expense.name} ${manual ? 'needs paying' : 'comes out'} ${relativeDays(st.nextDue)}`,
+              detail: `${formatCurrency(st.amount)} on ${formatShort(st.nextDue)}${manual ? ' — pay manually, then tap Paid on the Bills tab' : ' — automatic'}`,
+              expense
+            })
+          }
         }
       }
 
-      // Expiring subscriptions (next 30 days)
+      // Ending soon (next 30 days)
       if (expense.subscriptionEndDate) {
-        const endDate = new Date(expense.subscriptionEndDate)
-        endDate.setHours(0, 0, 0, 0)
-        const daysUntilExpiry = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24))
-
+        const endDate = parseDate(expense.subscriptionEndDate)
+        const daysUntilExpiry = diffDays(today, endDate)
         if (daysUntilExpiry <= 30 && daysUntilExpiry >= 0) {
           alerts.push({
             type: 'expiring',
             severity: 'info',
             icon: Clock,
-            title: `${expense.name} expires ${daysUntilExpiry === 0 ? 'today' : `in ${daysUntilExpiry} days`}`,
-            detail: `Subscription ends ${endDate.toLocaleDateString()}`,
+            title: `${expense.name} ends ${relativeDays(endDate)}`,
+            detail: `Stops counting after ${formatShort(endDate)}`,
             expense
           })
         }
@@ -110,36 +127,16 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
 
       // Price changes coming up
       if (expense.priceChangeDate && expense.priceChangeAmount) {
-        const changeDate = new Date(expense.priceChangeDate)
-        changeDate.setHours(0, 0, 0, 0)
-        const daysUntilChange = Math.ceil((changeDate - today) / (1000 * 60 * 60 * 24))
-
-        if (daysUntilChange <= 30 && daysUntilChange >= 0) {
+        const changeDate = parseDate(expense.priceChangeDate)
+        const daysUntilChange = diffDays(today, changeDate)
+        if (daysUntilChange <= 30 && daysUntilChange > 0) {
           const diff = expense.priceChangeAmount - expense.amount
           alerts.push({
             type: 'price_change',
             severity: diff > 0 ? 'warning' : 'success',
             icon: Zap,
-            title: `${expense.name} price ${diff > 0 ? 'increase' : 'decrease'} in ${daysUntilChange} days`,
-            detail: `${formatCurrency(expense.amount)} -> ${formatCurrency(expense.priceChangeAmount)} (${diff > 0 ? '+' : ''}${formatCurrency(diff)})`,
-            expense
-          })
-        }
-      }
-
-      // Manual transfer reminders for non-direct-debit expenses
-      if (expense.paymentType === 'manual' && expense.nextDueDate) {
-        const dueDate = new Date(expense.nextDueDate)
-        dueDate.setHours(0, 0, 0, 0)
-        const daysUntil = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24))
-
-        if (daysUntil <= 3 && daysUntil >= 0) {
-          alerts.push({
-            type: 'manual_transfer',
-            severity: 'warning',
-            icon: CreditCard,
-            title: `Manual transfer needed: ${expense.name}`,
-            detail: `${formatCurrency(expense.amount)} due ${daysUntil === 0 ? 'today' : daysUntil === 1 ? 'tomorrow' : `in ${daysUntil} days`}`,
+            title: `${expense.name} price ${diff > 0 ? 'goes up' : 'goes down'} ${relativeDays(changeDate)}`,
+            detail: `${formatCurrency(expense.amount)} -> ${formatCurrency(expense.priceChangeAmount)} (${diff > 0 ? '+' : '-'}${formatCurrency(diff)})`,
             expense
           })
         }
@@ -151,7 +148,7 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
     alerts.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity])
 
     return alerts
-  }, [expenses, settings])
+  }, [expenses, settings, snap])
 
   const toggleCategoryCollapse = (key) => {
     const next = new Set(collapsedCategories)
@@ -162,22 +159,25 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
 
   // Per-person breakdown data
   const personBreakdowns = useMemo(() => {
-    return people.map(person => {
+    const hasShared = expenses.some(e => !people.some(p => p.id === e.personId))
+    const everyone = hasShared ? [...people, { id: '__shared', name: 'Shared', color: '#94a3b8' }] : people
+    return everyone.map(person => {
       const personSalaries = salaries.filter(s => s.personId === person.id)
-      const personIncome = personSalaries.reduce((sum, s) => sum + calculateYearlyAmount(s.amount, s.frequency), 0)
+      const personIncome = personSalaries.reduce((sum, s) => sum + yearly(s), 0)
 
-      const personExpenses = expenses.filter(e => e.personId === person.id && (e.itemType || 'expense') === 'expense')
-      const personSavings = expenses.filter(e => e.personId === person.id && e.itemType === 'saving')
+      const belongs = (e) => person.id === '__shared' ? !people.some(p => p.id === e.personId) : e.personId === person.id
+      const personExpenses = expenses.filter(e => belongs(e) && (e.itemType || 'expense') === 'expense')
+      const personSavings = expenses.filter(e => belongs(e) && e.itemType === 'saving')
 
       const expensesByCategory = categories
         .map(cat => ({
           ...cat,
           items: personExpenses.filter(e => e.categoryId === cat.id).map(e => ({
             ...e,
-            yearlyAmount: calculateYearlyAmount(e.amount, e.frequency)
+            yearlyAmount: yearly(e)
           })),
           yearlyTotal: personExpenses.filter(e => e.categoryId === cat.id)
-            .reduce((sum, e) => sum + calculateYearlyAmount(e.amount, e.frequency), 0)
+            .reduce((sum, e) => sum + yearly(e), 0)
         }))
         .filter(cat => cat.items.length > 0)
 
@@ -186,19 +186,19 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
           ...cat,
           items: personSavings.filter(e => e.categoryId === cat.id).map(e => ({
             ...e,
-            yearlyAmount: calculateYearlyAmount(e.amount, e.frequency)
+            yearlyAmount: yearly(e)
           })),
           yearlyTotal: personSavings.filter(e => e.categoryId === cat.id)
-            .reduce((sum, e) => sum + calculateYearlyAmount(e.amount, e.frequency), 0)
+            .reduce((sum, e) => sum + yearly(e), 0)
         }))
         .filter(cat => cat.items.length > 0)
 
       // Savings without a category
       const uncategorizedSavings = personSavings.filter(e => !e.categoryId || !categories.find(c => c.id === e.categoryId))
-        .map(e => ({ ...e, yearlyAmount: calculateYearlyAmount(e.amount, e.frequency) }))
+        .map(e => ({ ...e, yearlyAmount: yearly(e) }))
 
-      const totalPersonExpenses = personExpenses.reduce((sum, e) => sum + calculateYearlyAmount(e.amount, e.frequency), 0)
-      const totalPersonSavings = personSavings.reduce((sum, e) => sum + calculateYearlyAmount(e.amount, e.frequency), 0)
+      const totalPersonExpenses = personExpenses.reduce((sum, e) => sum + yearly(e), 0)
+      const totalPersonSavings = personSavings.reduce((sum, e) => sum + yearly(e), 0)
 
       return {
         person,
@@ -229,7 +229,7 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
       const catName = cat?.name || 'Other'
       const catColor = cat?.color || '#94a3b8'
       if (!savingsByCategory[catName]) savingsByCategory[catName] = { name: catName, value: 0, color: catColor }
-      savingsByCategory[catName].value += calculateYearlyAmount(e.amount, e.frequency)
+      savingsByCategory[catName].value += yearly(e)
     })
     return Object.values(savingsByCategory).map(d => ({
       ...d,
@@ -437,6 +437,42 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
         </div>
       </div>
 
+      {/* Bills account summary */}
+      {snap.bills.length > 0 && (
+        <button onClick={onOpenBills} className="card p-5 w-full text-left hover:ring-2 hover:ring-brand-200 transition">
+          <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-8">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-slate-500">Bills account</p>
+              <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                {snap.surplus === null ? (
+                  <>Required today {formatCurrency(snap.required)}</>
+                ) : snap.surplus >= 0 ? (
+                  <span className="text-emerald-600">{formatCurrency(snap.surplus)} ahead</span>
+                ) : (
+                  <span className="text-rose-600">{formatCurrency(snap.surplus)} short</span>
+                )}
+              </p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {snap.surplus === null ? 'Enter your balance on the Bills tab to see if you\'re on track' : `Balance ${formatCurrency(snap.balance)} · needs ${formatCurrency(snap.required)} today`}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              {people.map(person => {
+                const p = snap.plan.people[person.id]
+                if (!p?.nextDate) return null
+                return (
+                  <div key={person.id} className="text-sm">
+                    <p className="text-slate-500">{person.name} transfers</p>
+                    <p className="font-semibold text-slate-900 dark:text-white">{formatCurrency(p.perTransfer)} <span className="font-normal text-slate-400">/ {PERIOD_NOUN[p.frequency]}</span></p>
+                    <p className="text-xs text-slate-400">next {formatShort(p.nextDate)}</p>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </button>
+      )}
+
       {/* Two-column breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Per-person breakdown table */}
@@ -477,8 +513,8 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
                       <div className="ml-6 mt-1 space-y-0.5 border-l-2 border-emerald-200 pl-3">
                         {personSalaries.map(s => (
                           <div key={s.id} className="flex items-center justify-between text-xs py-0.5">
-                            <span className="text-slate-600">{s.name || 'Salary'}</span>
-                            <span className="text-slate-700 font-medium">{formatCurrency(getAmountForPeriod(calculateYearlyAmount(s.amount, s.frequency)))}</span>
+                            <span className="text-slate-600 dark:text-slate-300">{s.source || s.name || 'Income'}</span>
+                            <span className="text-slate-700 font-medium">{formatCurrency(getAmountForPeriod(yearly(s)))}</span>
                           </div>
                         ))}
                       </div>

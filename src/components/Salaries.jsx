@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import { Plus, Edit2, Trash2, X, UserPlus, Briefcase, TrendingUp } from 'lucide-react'
 import InfoTooltip from './InfoTooltip'
+import ScheduleEditor from './ScheduleEditor'
+import { annualAmount, formatMoney } from '../lib/finance'
+import { FREQUENCIES, FREQUENCY_LABELS, describeSchedule, nextOccurrence } from '../lib/schedule'
+import { formatShort, relativeDays } from '../lib/dates'
 
 export default function Salaries({ salaries, setSalaries, people, setPeople, settings }) {
   const [showSalaryModal, setShowSalaryModal] = useState(false)
@@ -8,24 +12,14 @@ export default function Salaries({ salaries, setSalaries, people, setPeople, set
   const [editingSalary, setEditingSalary] = useState(null)
   const [editingPerson, setEditingPerson] = useState(null)
 
-  const frequencies = ['weekly', 'fortnightly', 'monthly', 'quarterly', 'yearly']
-
-  const calculateYearlyAmount = (amount, frequency) => {
-    const multipliers = { weekly: 52, fortnightly: 26, monthly: 12, quarterly: 4, yearly: 1 }
-    return amount * (multipliers[frequency] || 0)
-  }
+  const frequencies = FREQUENCIES
 
   const getTotalByPerson = (personId) => {
     return salaries.filter(s => s.personId === personId)
-      .reduce((sum, s) => sum + calculateYearlyAmount(s.amount, s.frequency), 0)
+      .reduce((sum, s) => sum + annualAmount(s), 0)
   }
 
-  const formatCurrency = (amount) => {
-    return `${settings.currency || '$'}${Math.abs(amount).toLocaleString('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })}`
-  }
+  const formatCurrency = (amount) => formatMoney(Math.abs(amount), settings.currency || '$')
 
   const handleAddSalary = (newSalary) => {
     if (editingSalary) {
@@ -65,7 +59,7 @@ export default function Salaries({ salaries, setSalaries, people, setPeople, set
     }
   }
 
-  const totalYearly = salaries.reduce((sum, s) => sum + calculateYearlyAmount(s.amount, s.frequency), 0)
+  const totalYearly = salaries.reduce((sum, s) => sum + annualAmount(s), 0)
 
   return (
     <div className="space-y-6">
@@ -182,36 +176,36 @@ export default function Salaries({ salaries, setSalaries, people, setPeople, set
                 {/* Salary items */}
                 <div className="space-y-2">
                   {personSalaries.map(salary => {
-                    const getPayDayLabel = () => {
-                      if (!salary.payScheduleType) return null
-                      if (salary.payScheduleType === 'dayOfMonth') {
-                        const d = salary.payDayOfMonth || 15
-                        const suffix = d === 1 || d === 21 ? 'st' : d === 2 || d === 22 ? 'nd' : d === 3 || d === 23 ? 'rd' : 'th'
-                        return `${d}${suffix} of month`
-                      }
-                      if (salary.payScheduleType === 'dayOfWeek') {
-                        const interval = salary.payWeekInterval || 1
-                        const prefix = interval === 1 ? 'Every' : interval === 2 ? 'Every 2nd' : `Every ${interval}th`
-                        return `${prefix} ${salary.payDayOfWeek || 'Friday'}`
-                      }
-                      return null
-                    }
-                    const payLabel = getPayDayLabel()
+                    const nextPay = salary.schedule ? nextOccurrence(salary.schedule, undefined, { inclusive: true }) : null
+                    const payLabel = salary.schedule ? describeSchedule(salary.schedule) : null
 
                     return (
                     <div key={salary.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors group">
                       <div>
                         <p className="text-sm font-medium text-slate-700">{salary.source}</p>
                         <p className="text-xs text-slate-400">
-                          {formatCurrency(salary.amount)} {salary.frequency}
+                          {formatCurrency(salary.amount)} {FREQUENCY_LABELS[salary.frequency]?.toLowerCase()}
                           <span className="text-slate-300 mx-1">=</span>
-                          {formatCurrency(calculateYearlyAmount(salary.amount, salary.frequency) / 12)}/mo
+                          {formatCurrency(annualAmount(salary) / 12)}/mo
                         </p>
-                        {payLabel && (
-                          <p className="text-xs text-brand-500 mt-0.5">Pay day: {payLabel}</p>
+                        {payLabel ? (
+                          <>
+                          <p className="text-xs text-brand-500 mt-0.5">
+                            {payLabel}{nextPay && <> · next {formatShort(nextPay)} ({relativeDays(nextPay)})</>}
+                          </p>
+                          {salary.schedule.estimated && (
+                            <button onClick={() => { setEditingSalary(salary); setShowSalaryModal(true) }} className="text-xs text-amber-600 hover:underline">
+                              Estimated from old settings — tap to confirm the date
+                            </button>
+                          )}
+                          </>
+                        ) : (
+                          <button onClick={() => { setEditingSalary(salary); setShowSalaryModal(true) }} className="text-xs text-amber-600 mt-0.5 hover:underline">
+                            Add a pay date so transfers can be planned
+                          </button>
                         )}
                       </div>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => { setEditingSalary(salary); setShowSalaryModal(true) }}
                           className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-brand-600 transition-colors"
@@ -284,171 +278,82 @@ export default function Salaries({ salaries, setSalaries, people, setPeople, set
 }
 
 function SalaryModal({ salary, people, frequencies, onSave, onClose }) {
-  const weekDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-
   const [formData, setFormData] = useState({
     personId: salary?.personId || people[0]?.id || '',
     amount: salary?.amount || '',
     frequency: salary?.frequency || 'monthly',
-    source: salary?.source || '',
-    payScheduleType: salary?.payScheduleType || 'dayOfMonth',
-    payDayOfMonth: salary?.payDayOfMonth || 15,
-    payDayOfWeek: salary?.payDayOfWeek || 'Friday',
-    payWeekInterval: salary?.payWeekInterval || 1
+    source: salary?.source || ''
   })
+  const [schedule, setSchedule] = useState(salary?.schedule || { frequency: salary?.frequency || 'monthly', anchor: '', weekend: 'none' })
 
   const handleSubmit = (e) => {
     e.preventDefault()
+    const { payScheduleType: _a, payDayOfMonth: _b, payDayOfWeek: _c, payWeekInterval: _d, ...rest } = salary || {}
     onSave({
+      ...rest,
       ...formData,
       amount: parseFloat(formData.amount),
       personId: parseInt(formData.personId),
-      payDayOfMonth: parseInt(formData.payDayOfMonth),
-      payWeekInterval: parseInt(formData.payWeekInterval)
+      schedule: schedule.anchor ? { ...schedule, frequency: formData.frequency } : null
     })
   }
 
-  const getOrdinal = (n) => {
-    if (n === 1 || n === 21) return `${n}st`
-    if (n === 2 || n === 22) return `${n}nd`
-    if (n === 3 || n === 23) return `${n}rd`
-    return `${n}th`
-  }
-
   return (
-    <div className="modal-overlay">
-      <div className="modal-content max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center flex-shrink-0">
-          <h3 className="text-lg font-semibold text-slate-900">{salary ? 'Edit' : 'Add'} Income Source</h3>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center flex-shrink-0">
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{salary ? 'Edit' : 'Add'} income</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
             <X className="h-5 w-5" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
-          <div>
-            <label className="input-label">Person</label>
-            <select
-              value={formData.personId}
-              onChange={(e) => setFormData({ ...formData, personId: e.target.value })}
-              className="input"
-              required
-            >
-              {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
-
-          <div>
-            <label className="input-label">Source Name</label>
-            <input
-              type="text"
-              value={formData.source}
-              onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-              placeholder="e.g., Main Job, Freelance, Investments"
-              className="input"
-              required
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="input-label">Person</label>
+              <select value={formData.personId} onChange={(e) => setFormData({ ...formData, personId: e.target.value })} className="input" required>
+                {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="input-label">Source</label>
+              <input type="text" value={formData.source} onChange={(e) => setFormData({ ...formData, source: e.target.value })} placeholder="e.g. Salary" className="input" required />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="input-label">Amount</label>
-              <input
-                type="number"
-                step="0.01"
-                value={formData.amount}
-                onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                className="input"
-                placeholder="0.00"
-                required
-              />
+              <label className="input-label">Take-home pay</label>
+              <input type="number" inputMode="decimal" step="0.01" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} className="input" placeholder="0.00" required />
             </div>
             <div>
-              <label className="input-label">Frequency</label>
+              <label className="input-label">Paid</label>
               <select
                 value={formData.frequency}
-                onChange={(e) => setFormData({ ...formData, frequency: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, frequency: e.target.value }); setSchedule({ ...schedule, frequency: e.target.value }) }}
                 className="input"
                 required
               >
-                {frequencies.map(freq => (
-                  <option key={freq} value={freq}>{freq.charAt(0).toUpperCase() + freq.slice(1)}</option>
-                ))}
+                {frequencies.map(f => <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>)}
               </select>
             </div>
+            <p className="col-span-2 -mt-2 text-xs text-slate-500">After tax — the amount that actually lands in the bank.</p>
           </div>
 
-          {/* Pay Schedule */}
-          <div className="bg-slate-50 rounded-xl p-4 space-y-3">
-            <label className="input-label text-xs uppercase tracking-wider text-slate-500">Pay Day Schedule</label>
-
-            <div>
-              <label className="input-label">Paid on</label>
-              <select
-                value={formData.payScheduleType}
-                onChange={(e) => setFormData({ ...formData, payScheduleType: e.target.value })}
-                className="input"
-              >
-                <option value="dayOfMonth">Specific day of month</option>
-                <option value="dayOfWeek">Specific day of week</option>
-              </select>
-            </div>
-
-            {formData.payScheduleType === 'dayOfMonth' && (
-              <div>
-                <label className="input-label">Day of Month</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="28"
-                  value={formData.payDayOfMonth}
-                  onChange={(e) => setFormData({ ...formData, payDayOfMonth: e.target.value })}
-                  className="input"
-                />
-                <p className="text-xs text-slate-400 mt-1">
-                  Paid on the {getOrdinal(parseInt(formData.payDayOfMonth) || 1)} of each month
-                </p>
-              </div>
-            )}
-
-            {formData.payScheduleType === 'dayOfWeek' && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="input-label">Day</label>
-                  <select
-                    value={formData.payDayOfWeek}
-                    onChange={(e) => setFormData({ ...formData, payDayOfWeek: e.target.value })}
-                    className="input"
-                  >
-                    {weekDays.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="input-label">Every</label>
-                  <select
-                    value={formData.payWeekInterval}
-                    onChange={(e) => setFormData({ ...formData, payWeekInterval: e.target.value })}
-                    className="input"
-                  >
-                    <option value="1">Every week</option>
-                    <option value="2">Every 2nd week</option>
-                    <option value="4">Every 4th week</option>
-                  </select>
-                </div>
-                <p className="col-span-2 text-xs text-slate-400">
-                  Paid every {formData.payWeekInterval === '1' || formData.payWeekInterval === 1 ? '' : formData.payWeekInterval === '2' || formData.payWeekInterval === 2 ? '2nd ' : '4th '}{formData.payDayOfWeek}
-                </p>
-              </div>
-            )}
+          <div className="bg-slate-50 dark:bg-slate-700/40 rounded-xl p-4">
+            <p className="input-label text-xs uppercase tracking-wider text-slate-500 mb-3">Pay day</p>
+            <ScheduleEditor
+              value={{ ...schedule, frequency: formData.frequency }}
+              onChange={(v) => setSchedule(v)}
+              lockFrequency
+              dateLabel="A recent pay date"
+            />
           </div>
 
           <div className="flex gap-3 pt-2">
-            <button type="submit" className="btn-primary flex-1">
-              {salary ? 'Update' : 'Add'} Income
-            </button>
-            <button type="button" onClick={onClose} className="btn-secondary flex-1">
-              Cancel
-            </button>
+            <button type="submit" className="btn-primary flex-1">{salary ? 'Save' : 'Add'}</button>
+            <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
           </div>
         </form>
       </div>

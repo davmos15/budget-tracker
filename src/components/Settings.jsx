@@ -5,8 +5,11 @@ import { auth, db } from '../firebase'
 import { deleteUser } from 'firebase/auth'
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, arrayRemove, arrayUnion, collection, getDocs } from 'firebase/firestore'
 import ShareBudgetModal from './ShareBudgetModal'
+import ScheduleEditor from './ScheduleEditor'
+import { SPLIT_METHODS, transferPlan, formatMoney, PERIOD_NOUN, primaryPaySchedule } from '../lib/finance'
+import { describeSchedule } from '../lib/schedule'
 
-export default function SettingsPage({ settings, setSettings, people, budgetCode, budgetName, onBack }) {
+export default function SettingsPage({ settings, setSettings, people, salaries = [], expenses = [], budgetCode, budgetName, onBack }) {
   const { user, budget, budgetId, budgetOwnerId } = useFirebase()
   const [localSettings, setLocalSettings] = useState({
     ...settings,
@@ -33,16 +36,6 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
     { value: 'dd MMM yyyy', label: 'DD MMM YYYY', example: '27 May 2025' }
   ]
 
-  const transferFrequencies = [
-    { value: 'weekly', label: 'Weekly' },
-    { value: 'fortnightly', label: 'Fortnightly' },
-    { value: 'monthly', label: 'Monthly' },
-    { value: 'quarterly', label: 'Quarterly' }
-  ]
-
-  const weekDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-  const weekNumbers = ['1st', '2nd', '3rd', '4th', 'Last']
-
   const currencies = [
     { value: '$', label: '$' },
     { value: '€', label: '€' },
@@ -56,38 +49,18 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
     { value: 'C$', label: 'C$' }
   ]
 
-  // Initialize transfer settings for any people that don't have them yet
-  useEffect(() => {
-    const pts = localSettings.peopleTransferSettings || {}
-    const missing = people.filter(p => !pts[p.id])
-    if (missing.length > 0) {
-      const updated = { ...pts }
-      missing.forEach(p => {
-        updated[p.id] = {
-          frequency: 'fortnightly',
-          type: 'dayOfWeek',
-          dayOfWeek: 'Friday',
-          dayOfMonth: 1,
-          weekNumber: '1st',
-          weekDayOfMonth: 'Monday'
-        }
-      })
-      setLocalSettings(prev => ({ ...prev, peopleTransferSettings: updated }))
-    }
-  }, [people])
-
-  const updatePersonTransferSettings = (personId, field, value) => {
+  const updatePersonTransferSettings = (personId, patch) => {
     setLocalSettings({
       ...localSettings,
       peopleTransferSettings: {
         ...localSettings.peopleTransferSettings,
-        [personId]: {
-          ...localSettings.peopleTransferSettings[personId],
-          [field]: value
-        }
+        [personId]: { ...(localSettings.peopleTransferSettings?.[personId] || {}), ...patch }
       }
     })
   }
+
+  const preview = transferPlan({ expenses, people, salaries, settings: localSettings })
+  const splitMethod = preview.method
 
   const handleSave = () => {
     setSettings(localSettings)
@@ -270,7 +243,7 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
         if (budget?.info?.code) {
           try {
             await deleteDoc(doc(db, 'budgetCodes', budget.info.code))
-          } catch (e) {
+          } catch {
             // Ignore if code doc doesn't exist
           }
         }
@@ -312,13 +285,6 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
       setDeleteBudgetError('Failed to delete budget. Please try again.')
       setDeleteBudgetLoading(false)
     }
-  }
-
-  const getOrdinalSuffix = (n) => {
-    if (n === 1) return 'st'
-    if (n === 2) return 'nd'
-    if (n === 3) return 'rd'
-    return 'th'
   }
 
   return (
@@ -404,129 +370,132 @@ export default function SettingsPage({ settings, setSettings, people, budgetCode
             </p>
           </div>
 
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <RefreshCw className="h-4 w-4 text-slate-400" />
-              <label className="input-label mb-0">Default Transfer Frequency</label>
-            </div>
-            <select
-              value={localSettings.transferFrequency}
-              onChange={(e) => setLocalSettings({ ...localSettings, transferFrequency: e.target.value })}
-              className="input"
-            >
-              {transferFrequencies.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-            </select>
-          </div>
         </div>
       </div>
 
-      {/* Transfer Settings by Person */}
+      {/* Bills account transfers */}
       <div className="card p-6">
-        <div className="flex items-center gap-2 mb-6">
-          <User className="h-5 w-5 text-slate-400" />
-          <h3 className="text-lg font-semibold text-slate-900">Transfer Schedule by Person</h3>
+        <div className="flex items-center gap-2 mb-1">
+          <RefreshCw className="h-5 w-5 text-slate-400" />
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Bills account transfers</h3>
         </div>
+        <p className="text-sm text-slate-500 mb-5">How much each person moves into the bills account, and when. Amounts are worked out so money in matches bills out over the year.</p>
+
+        {people.length > 1 && (
+          <div className="mb-6">
+            <label className="input-label">Share the bills</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {SPLIT_METHODS.map(m => (
+                <label
+                  key={m.value}
+                  className={`p-3 rounded-xl border cursor-pointer transition-colors ${
+                    splitMethod === m.value ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/40'
+                  }`}
+                >
+                  <input type="radio" name="split" className="sr-only" checked={splitMethod === m.value} onChange={() => setLocalSettings({ ...localSettings, transferSplit: m.value })} />
+                  <span className="block text-sm font-medium text-slate-900 dark:text-white">{m.label}</span>
+                  <span className="block text-xs text-slate-500 mt-0.5">{m.help}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="space-y-4">
           {people.map(person => {
-            const ps = localSettings.peopleTransferSettings?.[person.id]
-            if (!ps) return null
+            const ps = localSettings.peopleTransferSettings?.[person.id] || {}
+            const paySchedule = primaryPaySchedule(person.id, salaries)
+            const followsPay = ps.followsPay !== false
+            const plan = preview.people[person.id]
 
             return (
-              <div key={person.id} className="bg-slate-50 rounded-xl p-4">
-                <div className="flex items-center gap-2.5 mb-4">
-                  <div className="w-6 h-6 rounded-full" style={{ backgroundColor: person.color }} />
-                  <h4 className="font-medium text-slate-900">{person.name}</h4>
+              <div key={person.id} className="bg-slate-50 dark:bg-slate-700/40 rounded-xl p-4 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-6 h-6 rounded-full" style={{ backgroundColor: person.color }} />
+                    <h4 className="font-medium text-slate-900 dark:text-white">{person.name}</h4>
+                  </div>
+                  {plan?.frequency && (
+                    <p className="text-sm text-slate-600 dark:text-slate-300">
+                      <strong>{formatMoney(plan.perTransfer, localSettings.currency || '$')}</strong> per {PERIOD_NOUN[plan.frequency]}
+                    </p>
+                  )}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="input-label text-xs">Frequency</label>
-                    <select
-                      value={ps.frequency || 'fortnightly'}
-                      onChange={(e) => updatePersonTransferSettings(person.id, 'frequency', e.target.value)}
-                      className="input text-sm py-2"
-                    >
-                      {transferFrequencies.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-                    </select>
-                  </div>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={followsPay}
+                    onChange={(e) => updatePersonTransferSettings(person.id, {
+                      followsPay: e.target.checked,
+                      schedule: ps.schedule || paySchedule || { frequency: 'fortnightly', anchor: '', weekend: 'none' }
+                    })}
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                  />
+                  <span>
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Transfer on payday</span>
+                    <span className="block text-xs text-slate-500">
+                      {paySchedule ? describeSchedule(paySchedule) : 'No pay date set yet — add one on the Income tab, or untick to set a transfer day.'}
+                    </span>
+                  </span>
+                </label>
 
-                  <div>
-                    <label className="input-label text-xs">Transfer On</label>
-                    <select
-                      value={ps.type || 'dayOfWeek'}
-                      onChange={(e) => updatePersonTransferSettings(person.id, 'type', e.target.value)}
-                      className="input text-sm py-2"
-                    >
-                      <option value="dayOfWeek">Day of Week</option>
-                      <option value="dayOfMonth">Day of Month</option>
-                      <option value="weekDayOfMonth">Week & Day of Month</option>
-                    </select>
-                  </div>
+                {(!followsPay || !paySchedule) && (
+                  <ScheduleEditor
+                    value={ps.schedule}
+                    onChange={(schedule) => updatePersonTransferSettings(person.id, { schedule, followsPay: false })}
+                    dateLabel="A recent transfer date"
+                  />
+                )}
 
-                  {ps.type === 'dayOfWeek' && (
-                    <div className="md:col-span-2">
-                      <label className="input-label text-xs">Day</label>
-                      <select
-                        value={ps.dayOfWeek || 'Friday'}
-                        onChange={(e) => updatePersonTransferSettings(person.id, 'dayOfWeek', e.target.value)}
-                        className="input text-sm py-2"
-                      >
-                        {weekDays.map(d => <option key={d} value={d}>{d}</option>)}
-                      </select>
-                    </div>
-                  )}
-
-                  {ps.type === 'dayOfMonth' && (
-                    <div className="md:col-span-2">
-                      <label className="input-label text-xs">Day of Month (1-28)</label>
+                {splitMethod === 'custom' && people.length > 1 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-slate-200 dark:border-slate-600">
+                    <label className="flex items-center gap-2 cursor-pointer pt-3">
+                      <input
+                        type="radio"
+                        name={`mode-${person.id}`}
+                        checked={!ps.topUp}
+                        onChange={() => updatePersonTransferSettings(person.id, { topUp: false })}
+                        className="h-4 w-4 text-brand-600 focus:ring-brand-500"
+                      />
+                      <span className="text-sm text-slate-700 dark:text-slate-200">Fixed amount</span>
                       <input
                         type="number"
-                        min="1"
-                        max="28"
-                        value={ps.dayOfMonth || 1}
-                        onChange={(e) => updatePersonTransferSettings(person.id, 'dayOfMonth', parseInt(e.target.value))}
-                        className="input text-sm py-2"
+                        inputMode="decimal"
+                        step="0.01"
+                        disabled={!!ps.topUp}
+                        value={ps.fixedAmount ?? ''}
+                        onChange={(e) => updatePersonTransferSettings(person.id, { fixedAmount: e.target.value === '' ? null : parseFloat(e.target.value) })}
+                        className="input py-1.5 text-sm w-32 disabled:opacity-50"
+                        placeholder="per transfer"
                       />
-                    </div>
-                  )}
-
-                  {ps.type === 'weekDayOfMonth' && (
-                    <>
-                      <div>
-                        <label className="input-label text-xs">Week</label>
-                        <select
-                          value={ps.weekNumber || '1st'}
-                          onChange={(e) => updatePersonTransferSettings(person.id, 'weekNumber', e.target.value)}
-                          className="input text-sm py-2"
-                        >
-                          {weekNumbers.map(w => <option key={w} value={w}>{w}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="input-label text-xs">Day</label>
-                        <select
-                          value={ps.weekDayOfMonth || 'Monday'}
-                          onChange={(e) => updatePersonTransferSettings(person.id, 'weekDayOfMonth', e.target.value)}
-                          className="input text-sm py-2"
-                        >
-                          {weekDays.map(d => <option key={d} value={d}>{d}</option>)}
-                        </select>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                <p className="text-xs text-slate-400 mt-3">
-                  {ps.frequency} on{' '}
-                  {ps.type === 'dayOfWeek' && `every ${ps.dayOfWeek}`}
-                  {ps.type === 'dayOfMonth' && `the ${ps.dayOfMonth}${getOrdinalSuffix(ps.dayOfMonth)} of each month`}
-                  {ps.type === 'weekDayOfMonth' && `the ${ps.weekNumber} ${ps.weekDayOfMonth} of each month`}
-                </p>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer sm:pt-3">
+                      <input
+                        type="radio"
+                        name={`mode-${person.id}`}
+                        checked={!!ps.topUp}
+                        onChange={() => updatePersonTransferSettings(person.id, { topUp: true })}
+                        className="h-4 w-4 text-brand-600 focus:ring-brand-500"
+                      />
+                      <span className="text-sm text-slate-700 dark:text-slate-200">Tops up the rest</span>
+                    </label>
+                  </div>
+                )}
               </div>
             )
           })}
         </div>
+
+        {preview.shortfallAnnual > 1 && (
+          <div className="alert alert-warning mt-4">
+            <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+            <p className="text-sm">
+              These transfers are {formatMoney(preview.shortfallAnnual / 26, localSettings.currency || '$')} a fortnight short of your bills.
+              {splitMethod === 'custom' ? ' Mark someone as "Tops up the rest".' : ' Check everyone has a pay or transfer date.'}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Budget Sharing */}

@@ -38,21 +38,26 @@ A modern, mobile-first budget tracking PWA with real-time collaboration, smart n
 
 ### Income Tracking
 - Multiple income sources per person
-- Pay day scheduling (specific day of month, or day of week with interval)
+- Pay day set from one real pay date (weekly, fortnightly, every 4 weeks, monthly…, with weekend handling); drives the transfer schedule
 - Automatic yearly/monthly conversion display
 - Person management with preset color picker
 
-### Bill Allocation
-- **Total Bills Owing** - calculated from all expenses based on transfer schedule
-- **Smart required amounts** - steps up with each completed transfer rather than daily proration (e.g. a $300 monthly bill with fortnightly transfers shows $0 → $150 → $300)
-- **Current Bills Account** - manually enter your actual balance
-- **Excess / Deficit** - auto-calculated difference shown in green/red
-- Per-person balance breakdown with last transfer tracking
-- Quick "Today" button to record transfers
-- Transfer reminders based on configured schedule
-- Sortable table columns for bill breakdown
-- Static amounts for emergency funds or buffers
-- Auto-update next due dates when marking bills as paid
+### Bills Account
+- **Required today** — what should already be set aside for every bill, plus your credit-card balance and any buffers, plus what bills build up until everyone's next transfer, minus those transfers. Never less than the cash needed for bills due before the transfers land.
+- **Surplus / shortfall** against the balance you enter (with a reminder when the balance is over a week old)
+- **Transfer plan** — how much each person should move in, and when, so money in matches bills out over the year. Split by income, equally, by bill owner, or fixed amounts with one person topping up the rest
+- **60-day forecast** of the balance against what should be set aside, with an overdraft warning
+- Each bill shows how much is set aside so far, a progress bar and its next due date
+- Automatic payments (direct debit, standing order, card) roll to the next due date on their own; manual bills get a **Paid** button (with undo)
+- Bills paid from elsewhere (e.g. groceries) can be excluded from the bills account but still count in the budget
+- Buffers for fixed amounts that should always stay in the account
+
+### How the numbers are worked out
+All calculations live in `src/lib/` (pure functions, unit tested with `npm test`):
+- `dates.js` — local calendar-day dates (no timezone off-by-one)
+- `schedule.js` — recurring dates: weekly → yearly, keeps the day of month, optional "Friday before / Monday after" for weekends
+- `finance.js` — per-period conversions, bill status, transfer plan, bills snapshot and forecast
+- `migrate.js` — upgrades older budgets in memory (old pay/transfer settings become schedules)
 
 ### Onboarding
 - Guided setup wizard for new budgets
@@ -70,7 +75,7 @@ A modern, mobile-first budget tracking PWA with real-time collaboration, smart n
 ### Settings
 - Currency support: $, EUR, GBP, JPY, INR, RUB, ZAR, KRW, AUD, NZD, CAD
 - Date format options (US, EU, ISO, text formats) - default DD/MM/YYYY
-- Per-person transfer frequency and schedule configuration
+- How bills are shared, and per-person transfer days (defaults to payday)
 - Sticky save bar when changes are pending
 - Budget sharing and user management (admin only)
 - Delete budget (owner) or leave budget (member) with confirmation
@@ -114,7 +119,12 @@ VITE_FIREBASE_APP_ID=your_app_id
 VITE_FIREBASE_MEASUREMENT_ID=your_measurement_id
 ```
 
-4. Start the development server:
+4. Run the tests:
+```bash
+npm test
+```
+
+5. Start the development server:
 ```bash
 npm run dev
 ```

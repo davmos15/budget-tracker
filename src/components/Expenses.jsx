@@ -1,6 +1,9 @@
 import { useState, useMemo } from 'react'
-import { Plus, Edit2, Trash2, X, Search, Filter, CreditCard, CalendarClock, AlertTriangle, Zap, ChevronUp, ChevronDown, Receipt, PiggyBank, TrendingDown, Wallet } from 'lucide-react'
+import { Plus, Edit2, Trash2, X, Search, ChevronUp, ChevronDown, Receipt, PiggyBank, TrendingDown, Wallet, Copy, PauseCircle } from 'lucide-react'
 import InfoTooltip from './InfoTooltip'
+import { amountPer, annualAmount, billStatus, effectiveAmount, formatMoney, isActive, isAutoPay, isBill, itemType, PAYMENT_TYPES, PERIOD_NOUN, perPeriod } from '../lib/finance'
+import { FREQUENCIES, FREQUENCY_LABELS } from '../lib/schedule'
+import { formatShort, toISODate } from '../lib/dates'
 
 export default function Expenses({ expenses, setExpenses, categories, setCategories, people, salaries, settings }) {
   const [showAddModal, setShowAddModal] = useState(false)
@@ -15,56 +18,45 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
   const [viewMode, setViewMode] = useState('monthly')
   const [sortKey, setSortKey] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
+  const [duplicateFrom, setDuplicateFrom] = useState(null)
 
-  const frequencies = ['weekly', 'fortnightly', 'monthly', 'quarterly', 'yearly']
   const viewModes = ['weekly', 'fortnightly', 'monthly', 'yearly']
-  const periodLabels = { weekly: 'week', fortnightly: 'fortnight', monthly: 'month', yearly: 'year' }
-  const paymentTypes = [
-    { value: 'direct_debit', label: 'Direct Debit', color: 'emerald' },
-    { value: 'standing_order', label: 'Standing Order', color: 'blue' },
-    { value: 'manual', label: 'Manual Transfer', color: 'amber' },
-    { value: 'card', label: 'Card Payment', color: 'violet' }
-  ]
+  const periodLabels = PERIOD_NOUN
+  const paymentTypes = PAYMENT_TYPES
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(expense => {
       if (filterCategory && expense.categoryId !== parseInt(filterCategory)) return false
-      if (filterPerson && expense.personId !== parseInt(filterPerson)) return false
+      if (filterPerson === 'shared' && people.some(p => p.id === expense.personId)) return false
+      if (filterPerson && filterPerson !== 'shared' && expense.personId !== parseInt(filterPerson)) return false
       if (filterPaymentType && expense.paymentType !== filterPaymentType) return false
-      if (filterItemType && (expense.itemType || 'expense') !== filterItemType) return false
+      if (filterItemType === 'bills' && !isBill(expense)) return false
+      if (filterItemType && filterItemType !== 'bills' && itemType(expense) !== filterItemType) return false
       if (searchQuery) {
         const q = searchQuery.toLowerCase()
         if (!expense.name.toLowerCase().includes(q) && !(expense.company || '').toLowerCase().includes(q)) return false
       }
       return true
     })
-  }, [expenses, filterCategory, filterPerson, filterPaymentType, filterItemType, searchQuery])
+  }, [expenses, filterCategory, filterPerson, filterPaymentType, filterItemType, searchQuery, people])
 
-  const calculateDisplayAmount = (amount, frequency) => {
-    const yearlyMultipliers = { weekly: 52, fortnightly: 26, monthly: 12, quarterly: 4, yearly: 1 }
-    const yearlyAmount = amount * yearlyMultipliers[frequency]
-    const divisors = { weekly: 52, fortnightly: 26, monthly: 12, quarterly: 4, yearly: 1 }
-    return yearlyAmount / divisors[viewMode]
-  }
+  // Per-period amount (0 when paused or ended; uses any price change already in force)
+  const displayFor = (expense) => amountPer(expense, viewMode)
 
   // Calculate totals based on active filters
   const hasActiveFilters = filterCategory || filterPerson || filterPaymentType || filterItemType || searchQuery
-  const { totalExpenses, totalSavings, totalIncome, disposableIncome } = useMemo(() => {
+  const { totalExpenses, totalSavings, disposableIncome } = useMemo(() => {
     const itemsToTotal = hasActiveFilters ? filteredExpenses : expenses
     const totalExpenses = itemsToTotal
-      .filter(e => (e.itemType || 'expense') === 'expense')
-      .reduce((sum, e) => sum + calculateDisplayAmount(e.amount, e.frequency), 0)
+      .filter(e => itemType(e) === 'expense')
+      .reduce((sum, e) => sum + displayFor(e), 0)
     const totalSavings = itemsToTotal
       .filter(e => e.itemType === 'saving')
-      .reduce((sum, e) => sum + calculateDisplayAmount(e.amount, e.frequency), 0)
-    const yearlyMultipliers = { weekly: 52, fortnightly: 26, monthly: 12, quarterly: 4, yearly: 1 }
-    const divisors = { weekly: 52, fortnightly: 26, monthly: 12, quarterly: 4, yearly: 1 }
-    const filteredSalaries = filterPerson
+      .reduce((sum, e) => sum + displayFor(e), 0)
+    const filteredSalaries = filterPerson && filterPerson !== 'shared'
       ? (salaries || []).filter(s => s.personId === parseInt(filterPerson))
-      : (salaries || [])
-    const totalIncome = filteredSalaries.reduce((sum, s) =>
-      sum + (s.amount * (yearlyMultipliers[s.frequency] || 0)) / divisors[viewMode], 0
-    )
+      : filterPerson === 'shared' ? [] : (salaries || [])
+    const totalIncome = perPeriod(filteredSalaries.reduce((sum, s) => sum + annualAmount(s), 0), viewMode)
     return {
       totalExpenses,
       totalSavings,
@@ -102,11 +94,11 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
       switch (sortKey) {
         case 'name': aVal = a.name.toLowerCase(); bVal = b.name.toLowerCase(); break
         case 'amount': aVal = a.amount; bVal = b.amount; break
-        case 'displayAmount': aVal = calculateDisplayAmount(a.amount, a.frequency); bVal = calculateDisplayAmount(b.amount, b.frequency); break
+        case 'displayAmount': aVal = displayFor(a); bVal = displayFor(b); break
         case 'category': aVal = (categories.find(c => c.id === a.categoryId)?.name || '').toLowerCase(); bVal = (categories.find(c => c.id === b.categoryId)?.name || '').toLowerCase(); break
         case 'person': aVal = (people.find(p => p.id === a.personId)?.name || '').toLowerCase(); bVal = (people.find(p => p.id === b.personId)?.name || '').toLowerCase(); break
         case 'type': aVal = a.paymentType || ''; bVal = b.paymentType || ''; break
-        case 'nextDue': aVal = a.nextDueDate || '9999'; bVal = b.nextDueDate || '9999'; break
+        case 'nextDue': aVal = billStatus(a).nextDue?.getTime() ?? Infinity; bVal = billStatus(b).nextDue?.getTime() ?? Infinity; break
         default: return 0
       }
       if (aVal < bVal) return -1
@@ -116,28 +108,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
     return sortDir === 'desc' ? sorted.reverse() : sorted
   }, [filteredExpenses, sortKey, sortDir, categories, people, viewMode])
 
-  // Auto-calculate next due date based on frequency and last paid
-  const calculateNextDueDate = (expense) => {
-    if (!expense.lastPaid) return null
-    const lastPaid = new Date(expense.lastPaid)
-    const next = new Date(lastPaid)
-
-    switch (expense.frequency) {
-      case 'weekly': next.setDate(next.getDate() + 7); break
-      case 'fortnightly': next.setDate(next.getDate() + 14); break
-      case 'monthly': next.setMonth(next.getMonth() + 1); break
-      case 'quarterly': next.setMonth(next.getMonth() + 3); break
-      case 'yearly': next.setFullYear(next.getFullYear() + 1); break
-    }
-    return next.toISOString().split('T')[0]
-  }
-
   const handleAddExpense = (newExpense) => {
-    // Auto-set next due date for direct debits
-    if ((newExpense.paymentType === 'direct_debit' || newExpense.paymentType === 'standing_order') && newExpense.lastPaid && !newExpense.nextDueDate) {
-      newExpense.nextDueDate = calculateNextDueDate(newExpense)
-    }
-
     if (editingExpense) {
       setExpenses(expenses.map(e => e.id === editingExpense.id ? { ...newExpense, id: e.id } : e))
     } else {
@@ -145,6 +116,12 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
     }
     setShowAddModal(false)
     setEditingExpense(null)
+  }
+
+  const handleDuplicate = (expense) => {
+    setEditingExpense(null)
+    setDuplicateFrom({ ...expense, name: `${expense.name} (copy)` })
+    setShowAddModal(true)
   }
 
   const handleDeleteExpense = (id) => {
@@ -177,42 +154,34 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
     }
   }
 
-  const formatCurrency = (amount) => {
-    return `${settings.currency || '$'}${Math.abs(amount).toLocaleString('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })}`
-  }
+  const formatCurrency = (amount) => formatMoney(Math.abs(amount), settings.currency || '$')
 
   const getPaymentTypeBadge = (type) => {
     const pt = paymentTypes.find(p => p.value === type)
     if (!pt) return null
-    const colorMap = {
-      emerald: 'badge-success',
-      blue: 'badge-info',
-      amber: 'badge-warning',
-      violet: 'badge-brand'
-    }
-    return <span className={`badge ${colorMap[pt.color]}`}>{pt.label}</span>
+    return <span className={`badge ${pt.auto ? 'badge-success' : 'badge-warning'}`}>{pt.short}</span>
   }
 
   const getDueStatus = (expense) => {
-    if (!expense.nextDueDate) return null
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const due = new Date(expense.nextDueDate)
-    due.setHours(0, 0, 0, 0)
-    const days = Math.ceil((due - today) / (1000 * 60 * 60 * 24))
-    const isAutoPay = expense.paymentType === 'direct_debit' || expense.paymentType === 'standing_order'
-
-    if (days < 0) {
-      if (isAutoPay) return { text: 'Auto-paid', className: 'text-emerald-500' }
-      return { text: `${Math.abs(days)}d overdue`, className: 'text-rose-600 font-semibold' }
-    }
-    if (days === 0) return { text: 'Due today', className: 'text-amber-600 font-semibold' }
-    if (days <= 7) return { text: `${days}d`, className: 'text-amber-500' }
-    return { text: `${days}d`, className: 'text-slate-400' }
+    if (!isActive(expense)) return { text: expense.paused ? 'Paused' : 'Ended', className: 'text-slate-400' }
+    const st = billStatus(expense)
+    if (!st.scheduled) return null
+    if (st.overdue) return { text: `${st.daysOverdue}d overdue`, className: 'text-rose-600 font-semibold' }
+    if (st.debitedToday) return { text: 'Paid today', className: 'text-emerald-500' }
+    const label = formatShort(st.nextDue)
+    if (st.daysUntilDue === 0) return { text: 'Due today', className: 'text-amber-600 font-semibold' }
+    if (st.daysUntilDue <= 7) return { text: label, className: isAutoPay(expense) ? 'text-slate-600' : 'text-amber-600 font-medium' }
+    return { text: label, className: 'text-slate-400' }
   }
+
+  const ItemBadges = ({ expense }) => (
+    <>
+      {expense.itemType === 'saving' && <span className="badge badge-brand text-[10px] px-1.5 py-0 flex-shrink-0">Saving</span>}
+      {expense.paused && <span className="badge text-[10px] px-1.5 py-0 bg-slate-100 text-slate-500 flex-shrink-0"><PauseCircle className="h-3 w-3" />Paused</span>}
+      {itemType(expense) === 'expense' && !isBill(expense) && <span className="badge text-[10px] px-1.5 py-0 bg-slate-100 text-slate-500 flex-shrink-0" title="Paid from day-to-day spending, not the bills account">Spending</span>}
+      {effectiveAmount(expense) !== Number(expense.amount) && <span className="badge badge-warning text-[10px] px-1.5 py-0 flex-shrink-0">New price</span>}
+    </>
+  )
 
   return (
     <div className="space-y-5">
@@ -271,7 +240,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
           Categories
         </button>
         <button
-          onClick={() => { setEditingExpense(null); setShowAddModal(true) }}
+          onClick={() => { setEditingExpense(null); setDuplicateFrom(null); setShowAddModal(true) }}
           className="btn-primary text-sm"
         >
           <Plus className="h-4 w-4" />
@@ -295,7 +264,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
 
           <select value={viewMode} onChange={(e) => setViewMode(e.target.value)} className="input py-2 w-auto">
             {viewModes.map(mode => (
-              <option key={mode} value={mode}>{mode.charAt(0).toUpperCase() + mode.slice(1)} View</option>
+              <option key={mode} value={mode}>Per {PERIOD_NOUN[mode]}</option>
             ))}
           </select>
 
@@ -307,12 +276,14 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
           <select value={filterPerson} onChange={(e) => setFilterPerson(e.target.value)} className="input py-2 w-auto">
             <option value="">All People</option>
             {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            <option value="shared">Shared</option>
           </select>
 
           <select value={filterItemType} onChange={(e) => setFilterItemType(e.target.value)} className="input py-2 w-auto">
             <option value="">Expenses & Savings</option>
-            <option value="expense">Expenses Only</option>
-            <option value="saving">Savings Only</option>
+            <option value="expense">Expenses only</option>
+            <option value="bills">Bills account only</option>
+            <option value="saving">Savings only</option>
           </select>
 
           <select value={filterPaymentType} onChange={(e) => setFilterPaymentType(e.target.value)} className="input py-2 w-auto">
@@ -353,7 +324,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
                   <tr className="bg-slate-50 border-b border-slate-100">
                     <SortHeader label="Name" sortField="name" />
                     <SortHeader label="Amount" sortField="amount" className="text-right" />
-                    <SortHeader label={viewMode.charAt(0).toUpperCase() + viewMode.slice(1)} sortField="displayAmount" className="text-right" />
+                    <SortHeader label={`Per ${PERIOD_NOUN[viewMode]}`} sortField="displayAmount" className="text-right" />
                     <SortHeader label="Category" sortField="category" />
                     <SortHeader label="Person" sortField="person" />
                     <SortHeader label="Type" sortField="type" />
@@ -365,23 +336,23 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
                   {sortedExpenses.map(expense => {
                     const category = categories.find(c => c.id === expense.categoryId)
                     const person = people.find(p => p.id === expense.personId)
-                    const displayAmount = calculateDisplayAmount(expense.amount, expense.frequency)
+                    const displayAmount = displayFor(expense)
                     const dueStatus = getDueStatus(expense)
 
                     return (
                       <tr key={expense.id} className="hover:bg-slate-50/50 transition-colors">
                         <td className="table-cell">
                           <div>
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium text-slate-900">{expense.name}</p>
-                              {expense.itemType === 'saving' && <span className="badge badge-brand text-[10px] px-1.5 py-0">Saving</span>}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-medium text-slate-900 dark:text-white">{expense.name}</p>
+                              <ItemBadges expense={expense} />
                             </div>
                             {expense.company && <p className="text-xs text-slate-400">{expense.company}</p>}
                           </div>
                         </td>
                         <td className="table-cell text-right">
-                          <span className="font-medium text-slate-900">{formatCurrency(expense.amount)}</span>
-                          <p className="text-xs text-slate-400 capitalize">{expense.frequency}</p>
+                          <span className="font-medium text-slate-900 dark:text-white">{formatCurrency(effectiveAmount(expense))}</span>
+                          <p className="text-xs text-slate-400">{FREQUENCY_LABELS[expense.frequency]}</p>
                         </td>
                         <td className="table-cell text-right">
                           <span className="font-semibold text-slate-900">{formatCurrency(displayAmount)}</span>
@@ -394,10 +365,10 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
                         </td>
                         <td className="table-cell">
                           <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-semibold" style={{ backgroundColor: person?.color }}>
-                              {person?.name?.charAt(0)}
+                            <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-semibold" style={{ backgroundColor: person?.color || '#94a3b8' }}>
+                              {person?.name?.charAt(0) || 'S'}
                             </div>
-                            <span className="text-slate-600">{person?.name}</span>
+                            <span className="text-slate-600 dark:text-slate-300">{person?.name || 'Shared'}</span>
                           </div>
                         </td>
                         <td className="table-cell">
@@ -412,6 +383,13 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
                         </td>
                         <td className="table-cell text-right">
                           <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => handleDuplicate(expense)}
+                              className="p-1.5 hover:bg-brand-50 rounded-lg text-slate-400 hover:text-brand-600 transition-colors"
+                              title="Duplicate"
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </button>
                             <button
                               onClick={() => { setEditingExpense(expense); setShowAddModal(true) }}
                               className="p-1.5 hover:bg-brand-50 rounded-lg text-slate-400 hover:text-brand-600 transition-colors"
@@ -438,7 +416,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
               {sortedExpenses.map(expense => {
                 const category = categories.find(c => c.id === expense.categoryId)
                 const person = people.find(p => p.id === expense.personId)
-                const displayAmount = calculateDisplayAmount(expense.amount, expense.frequency)
+                const displayAmount = displayFor(expense)
                 const dueStatus = getDueStatus(expense)
 
                 return (
@@ -447,8 +425,8 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: category?.color }} />
-                          <p className="font-medium text-slate-900 truncate">{expense.name}</p>
-                          {expense.itemType === 'saving' && <span className="badge badge-brand text-[10px] px-1.5 py-0 flex-shrink-0">Saving</span>}
+                          <p className="font-medium text-slate-900 dark:text-white truncate">{expense.name}</p>
+                          <ItemBadges expense={expense} />
                         </div>
                         {expense.company && <p className="text-xs text-slate-400 ml-[18px]">{expense.company}</p>}
                       </div>
@@ -471,19 +449,19 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div>
-                          <p className="text-sm font-semibold text-slate-900">{formatCurrency(expense.amount)}</p>
-                          <p className="text-[10px] text-slate-400 capitalize">{expense.frequency}</p>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{formatCurrency(effectiveAmount(expense))}</p>
+                          <p className="text-[10px] text-slate-400">{FREQUENCY_LABELS[expense.frequency]}</p>
                         </div>
                         <div className="text-slate-200">|</div>
                         <div>
                           <p className="text-sm font-bold text-brand-600">{formatCurrency(displayAmount)}</p>
-                          <p className="text-[10px] text-slate-400 capitalize">{viewMode}</p>
+                          <p className="text-[10px] text-slate-400">per {PERIOD_NOUN[viewMode]}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
                         {getPaymentTypeBadge(expense.paymentType)}
-                        <div className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-semibold" style={{ backgroundColor: person?.color }}>
-                          {person?.name?.charAt(0)}
+                        <div className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-semibold" style={{ backgroundColor: person?.color || '#94a3b8' }}>
+                          {person?.name?.charAt(0) || 'S'}
                         </div>
                         {dueStatus && (
                           <span className={`text-[10px] ${dueStatus.className}`}>{dueStatus.text}</span>
@@ -501,14 +479,13 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
       {showAddModal && (
         <ExpenseModal
           expense={editingExpense}
+          template={duplicateFrom}
           categories={categories}
           people={people}
-          frequencies={frequencies}
-          paymentTypes={paymentTypes}
+          currency={settings.currency || '$'}
           onSave={handleAddExpense}
-          onClose={() => { setShowAddModal(false); setEditingExpense(null) }}
+          onClose={() => { setShowAddModal(false); setEditingExpense(null); setDuplicateFrom(null) }}
           onAddCategory={handleAddCategory}
-          calculateNextDueDate={calculateNextDueDate}
         />
       )}
 
@@ -527,335 +504,269 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
   )
 }
 
-function ExpenseModal({ expense, categories, people, frequencies, paymentTypes, onSave, onClose, onAddCategory, calculateNextDueDate }) {
+function ExpenseModal({ expense, template, categories, people, currency, onSave, onClose, onAddCategory }) {
+  const src = expense || template
   const [formData, setFormData] = useState({
-    name: expense?.name || '',
-    amount: expense?.amount || '',
-    frequency: expense?.frequency || 'monthly',
-    categoryId: expense?.categoryId || categories[0]?.id || '',
-    personId: expense?.personId || people[0]?.id || '',
-    company: expense?.company || '',
-    itemType: expense?.itemType || 'expense',
-    paymentType: expense?.paymentType || 'direct_debit',
-    lastPaid: expense?.lastPaid || '',
-    nextDueDate: expense?.nextDueDate || '',
-    subscriptionEndDate: expense?.subscriptionEndDate || '',
-    priceChangeDate: expense?.priceChangeDate || '',
-    priceChangeAmount: expense?.priceChangeAmount || '',
-    notes: expense?.notes || ''
+    name: src?.name || '',
+    amount: src?.amount ?? '',
+    frequency: src?.frequency || 'monthly',
+    categoryId: src?.categoryId || categories[0]?.id || '',
+    personId: src ? (src.personId ?? '') : (people[0]?.id ?? ''),
+    company: src?.company || '',
+    itemType: src?.itemType || 'expense',
+    paymentType: src?.paymentType || 'direct_debit',
+    fromBillsAccount: src?.fromBillsAccount !== false,
+    paused: !!src?.paused,
+    lastPaid: src?.lastPaid || '',
+    nextDueDate: src?.nextDueDate || (src ? toISODate(billStatus(src).nextDue) : ''),
+    subscriptionEndDate: src?.subscriptionEndDate || '',
+    priceChangeDate: src?.priceChangeDate || '',
+    priceChangeAmount: src?.priceChangeAmount ?? '',
+    notes: src?.notes || ''
   })
   const [showNewCategory, setShowNewCategory] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
   const [newCategoryColor, setNewCategoryColor] = useState('#6366f1')
   const [showAdvanced, setShowAdvanced] = useState(
-    !!(expense?.subscriptionEndDate || expense?.priceChangeDate || expense?.notes)
+    !!(src?.subscriptionEndDate || src?.priceChangeDate || src?.notes || src?.company || src?.lastPaid)
   )
 
-  // Auto-calculate next due date when lastPaid or frequency changes
-  const handleLastPaidChange = (date) => {
-    const updated = { ...formData, lastPaid: date }
-    if (date && (updated.paymentType === 'direct_debit' || updated.paymentType === 'standing_order')) {
-      updated.nextDueDate = calculateNextDueDate({ ...updated })
-    }
-    setFormData(updated)
-  }
-
-  const handleFrequencyChange = (freq) => {
-    const updated = { ...formData, frequency: freq }
-    if (updated.lastPaid && (updated.paymentType === 'direct_debit' || updated.paymentType === 'standing_order')) {
-      updated.nextDueDate = calculateNextDueDate({ ...updated })
-    }
-    setFormData(updated)
-  }
-
-  const handlePaymentTypeChange = (type) => {
-    const updated = { ...formData, paymentType: type }
-    if (updated.lastPaid && (type === 'direct_debit' || type === 'standing_order')) {
-      updated.nextDueDate = calculateNextDueDate({ ...updated })
-    }
-    setFormData(updated)
-  }
+  const set = (patch) => setFormData(f => ({ ...f, ...patch }))
+  const isSaving = formData.itemType === 'saving'
+  const amountNum = parseFloat(formData.amount)
+  const preview = !isNaN(amountNum) && amountNum > 0
+    ? annualAmount({ amount: amountNum, frequency: formData.frequency })
+    : 0
+  const money = (n) => formatMoney(n, currency)
+  const tracksDueDate = !isSaving && formData.fromBillsAccount
 
   const handleSubmit = (e) => {
     e.preventDefault()
     if (formData.categoryId === 'new') {
-      alert('Please create a new category first')
+      alert('Please create the new category first')
       return
     }
+    const personId = formData.personId === '' ? null : parseInt(formData.personId)
     onSave({
       ...formData,
+      name: formData.name.trim(),
       amount: parseFloat(formData.amount),
-      categoryId: formData.itemType === 'saving' ? null : parseInt(formData.categoryId),
-      personId: parseInt(formData.personId),
-      priceChangeAmount: formData.priceChangeAmount ? parseFloat(formData.priceChangeAmount) : null
+      categoryId: isSaving ? null : parseInt(formData.categoryId),
+      personId,
+      priceChangeAmount: formData.priceChangeAmount === '' ? null : parseFloat(formData.priceChangeAmount)
     })
   }
 
   const handleCategoryChange = (value) => {
     if (value === 'new') {
       setShowNewCategory(true)
-      setFormData({ ...formData, categoryId: '' })
+      set({ categoryId: '' })
     } else {
-      setFormData({ ...formData, categoryId: value })
+      set({ categoryId: value })
     }
   }
 
   const handleAddNewCategory = () => {
     if (newCategoryName.trim()) {
       const newCategory = onAddCategory({ name: newCategoryName.trim(), color: newCategoryColor })
-      setFormData({ ...formData, categoryId: newCategory.id })
+      set({ categoryId: newCategory.id })
       setShowNewCategory(false)
       setNewCategoryName('')
     }
   }
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-content max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center flex-shrink-0">
-          <h3 className="text-lg font-semibold text-slate-900">{expense ? 'Edit' : 'Add'} {formData.itemType === 'saving' ? 'Saving' : 'Expense'}</h3>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content max-w-lg max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center flex-shrink-0">
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{expense ? 'Edit' : 'Add'} {isSaving ? 'saving' : 'expense'}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
             <X className="h-5 w-5" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
-          {/* Item type toggle */}
-          <div className="flex bg-slate-100 rounded-xl p-1">
-            <button
-              type="button"
-              onClick={() => setFormData({ ...formData, itemType: 'expense' })}
-              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
-                formData.itemType !== 'saving'
-                  ? 'bg-white shadow-sm text-slate-900'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              Expense
-            </button>
-            <button
-              type="button"
-              onClick={() => setFormData({ ...formData, itemType: 'saving' })}
-              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
-                formData.itemType === 'saving'
-                  ? 'bg-white shadow-sm text-slate-900'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              Saving
-            </button>
+          <div className="flex bg-slate-100 dark:bg-slate-700 rounded-xl p-1">
+            {['expense', 'saving'].map(t => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => set({ itemType: t })}
+                className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                  formData.itemType === t ? 'bg-white dark:bg-slate-600 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {t === 'expense' ? 'Expense' : 'Saving'}
+              </button>
+            ))}
+          </div>
+
+          <div>
+            <label className="input-label">Name</label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => set({ name: e.target.value })}
+              className="input"
+              placeholder={isSaving ? 'e.g. Holiday fund' : 'e.g. Electricity'}
+              required
+              autoFocus
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <label className="input-label">{formData.itemType === 'saving' ? 'Saving' : 'Expense'} Name</label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="input"
-                placeholder="e.g., Netflix"
-                required
-              />
-            </div>
-
             <div>
               <label className="input-label">Amount</label>
               <input
                 type="number"
+                inputMode="decimal"
                 step="0.01"
+                min="0"
                 value={formData.amount}
-                onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                onChange={(e) => set({ amount: e.target.value })}
                 className="input"
                 placeholder="0.00"
                 required
               />
             </div>
-
             <div>
-              <label className="input-label">Frequency</label>
-              <select
-                value={formData.frequency}
-                onChange={(e) => handleFrequencyChange(e.target.value)}
-                className="input"
-                required
-              >
-                {frequencies.map(freq => (
-                  <option key={freq} value={freq}>{freq.charAt(0).toUpperCase() + freq.slice(1)}</option>
-                ))}
+              <label className="input-label">{isSaving ? 'How often' : 'Billed'}</label>
+              <select value={formData.frequency} onChange={(e) => set({ frequency: e.target.value })} className="input" required>
+                {FREQUENCIES.map(f => <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>)}
               </select>
             </div>
+            {preview > 0 && (
+              <p className="col-span-2 -mt-2 text-xs text-slate-500">
+                = {money(perPeriod(preview, 'fortnightly'))} a fortnight · {money(perPeriod(preview, 'monthly'))} a month · {money(preview)} a year
+              </p>
+            )}
+          </div>
 
-            <div>
-              <label className="input-label">Payment Type</label>
-              <select
-                value={formData.paymentType}
-                onChange={(e) => handlePaymentTypeChange(e.target.value)}
-                className="input"
-              >
-                {paymentTypes.map(pt => (
-                  <option key={pt.value} value={pt.value}>{pt.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="input-label">Company</label>
-              <input
-                type="text"
-                value={formData.company}
-                onChange={(e) => setFormData({ ...formData, company: e.target.value })}
-                className="input"
-                placeholder="e.g., Netflix Inc."
-              />
-            </div>
-
-            {formData.itemType !== 'saving' && (
+          <div className="grid grid-cols-2 gap-4">
+            {!isSaving && (
               <div>
                 <label className="input-label">Category</label>
-                <select
-                  value={formData.categoryId}
-                  onChange={(e) => handleCategoryChange(e.target.value)}
-                  className="input"
-                  required
-                >
+                <select value={formData.categoryId} onChange={(e) => handleCategoryChange(e.target.value)} className="input" required>
                   {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  <option value="new">+ Add New Category</option>
+                  <option value="new">+ New category</option>
                 </select>
               </div>
             )}
-
-            <div>
-              <label className="input-label">Person</label>
-              <select
-                value={formData.personId}
-                onChange={(e) => setFormData({ ...formData, personId: e.target.value })}
-                className="input"
-                required
-              >
+            <div className={isSaving ? 'col-span-2' : ''}>
+              <label className="input-label">For</label>
+              <select value={formData.personId ?? ''} onChange={(e) => set({ personId: e.target.value })} className="input">
                 {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {people.length > 1 && <option value="">Shared</option>}
               </select>
             </div>
           </div>
 
-          {showNewCategory && formData.itemType !== 'saving' && (
-            <div className="p-4 bg-slate-50 rounded-xl space-y-3">
+          {showNewCategory && !isSaving && (
+            <div className="p-4 bg-slate-50 dark:bg-slate-700/40 rounded-xl space-y-3">
               <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2">
-                  <input
-                    type="text"
-                    value={newCategoryName}
-                    onChange={(e) => setNewCategoryName(e.target.value)}
-                    className="input"
-                    placeholder="Category name"
-                  />
-                </div>
-                <input
-                  type="color"
-                  value={newCategoryColor}
-                  onChange={(e) => setNewCategoryColor(e.target.value)}
-                  className="input h-[42px] p-1 cursor-pointer"
-                />
+                <input type="text" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} className="input col-span-2" placeholder="Category name" />
+                <input type="color" value={newCategoryColor} onChange={(e) => setNewCategoryColor(e.target.value)} className="input h-[42px] p-1 cursor-pointer" />
               </div>
-              <button type="button" onClick={handleAddNewCategory} className="btn-success w-full text-sm">
-                Create Category
-              </button>
+              <button type="button" onClick={handleAddNewCategory} className="btn-success w-full text-sm">Create category</button>
             </div>
           )}
 
-          {/* Date fields */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="input-label">Last Paid Date</label>
+          {!isSaving && (
+            <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-700/40 cursor-pointer">
               <input
-                type="date"
-                value={formData.lastPaid}
-                onChange={(e) => handleLastPaidChange(e.target.value)}
-                className="input"
+                type="checkbox"
+                checked={formData.fromBillsAccount}
+                onChange={(e) => set({ fromBillsAccount: e.target.checked })}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
               />
-            </div>
-            <div>
-              <label className="input-label">
-                Next Due Date
-                {(formData.paymentType === 'direct_debit' || formData.paymentType === 'standing_order') && (
-                  <span className="text-xs text-brand-500 ml-1">(auto)</span>
-                )}
-              </label>
-              <input
-                type="date"
-                value={formData.nextDueDate}
-                onChange={(e) => setFormData({ ...formData, nextDueDate: e.target.value })}
-                className="input"
-              />
-            </div>
-          </div>
+              <span>
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Paid from the bills account</span>
+                <span className="block text-xs text-slate-500">Untick for day-to-day spending like groceries or eating out — it still counts in your budget, just not in the bills account.</span>
+              </span>
+            </label>
+          )}
 
-          {/* Advanced options toggle */}
+          {tracksDueDate && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="input-label">How it's paid</label>
+                <select value={formData.paymentType} onChange={(e) => set({ paymentType: e.target.value })} className="input">
+                  {PAYMENT_TYPES.map(pt => <option key={pt.value} value={pt.value}>{pt.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="input-label">Next due</label>
+                <input type="date" value={formData.nextDueDate} onChange={(e) => set({ nextDueDate: e.target.value })} className="input" />
+              </div>
+              <p className="col-span-2 -mt-2 text-xs text-slate-500">
+                {formData.paymentType === 'manual'
+                  ? 'Manual bills move to the next due date when you tap "Paid" on the Bills tab.'
+                  : 'Automatic payments move to the next due date on their own.'}
+                {!formData.nextDueDate && ' Add a due date so the right amount is set aside.'}
+              </p>
+            </div>
+          )}
+
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.paused}
+              onChange={(e) => set({ paused: e.target.checked })}
+              className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            />
+            <span className="text-sm text-slate-700 dark:text-slate-200">Paused <span className="text-xs text-slate-500">— keep it on the list but don't count it</span></span>
+          </label>
+
           <button
             type="button"
             onClick={() => setShowAdvanced(!showAdvanced)}
             className="text-sm text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1"
           >
-            {showAdvanced ? 'Hide' : 'Show'} advanced options
+            {showAdvanced ? 'Hide' : 'More'} options
             {showAdvanced ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
           </button>
 
           {showAdvanced && (
             <div className="space-y-4 animate-slide-down">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="input-label">Company</label>
+                  <input type="text" value={formData.company} onChange={(e) => set({ company: e.target.value })} className="input" placeholder="e.g. AGL" />
+                </div>
+                <div>
+                  <label className="input-label">Last paid</label>
+                  <input type="date" value={formData.lastPaid} onChange={(e) => set({ lastPaid: e.target.value })} className="input" />
+                </div>
+              </div>
+
               <div>
-                <label className="input-label">Subscription End Date</label>
-                <input
-                  type="date"
-                  value={formData.subscriptionEndDate}
-                  onChange={(e) => setFormData({ ...formData, subscriptionEndDate: e.target.value })}
-                  className="input"
-                />
-                <p className="text-xs text-slate-400 mt-1">Get reminded when this subscription is expiring</p>
+                <label className="input-label">Ends on</label>
+                <input type="date" value={formData.subscriptionEndDate} onChange={(e) => set({ subscriptionEndDate: e.target.value })} className="input" />
+                <p className="text-xs text-slate-400 mt-1">Stops counting after this date, with a reminder beforehand</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="input-label">Price Change Date</label>
-                  <input
-                    type="date"
-                    value={formData.priceChangeDate}
-                    onChange={(e) => setFormData({ ...formData, priceChangeDate: e.target.value })}
-                    className="input"
-                  />
+                  <label className="input-label">Price changes on</label>
+                  <input type="date" value={formData.priceChangeDate} onChange={(e) => set({ priceChangeDate: e.target.value })} className="input" />
                 </div>
                 <div>
-                  <label className="input-label">New Price</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.priceChangeAmount}
-                    onChange={(e) => setFormData({ ...formData, priceChangeAmount: e.target.value })}
-                    className="input"
-                    placeholder="0.00"
-                  />
+                  <label className="input-label">New price</label>
+                  <input type="number" inputMode="decimal" step="0.01" value={formData.priceChangeAmount} onChange={(e) => set({ priceChangeAmount: e.target.value })} className="input" placeholder="0.00" />
                 </div>
+                <p className="col-span-2 -mt-2 text-xs text-slate-400">The new price is used automatically from that date</p>
               </div>
 
               <div>
                 <label className="input-label">Notes</label>
-                <textarea
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  className="input"
-                  rows="2"
-                  placeholder="Any additional notes..."
-                />
+                <textarea value={formData.notes} onChange={(e) => set({ notes: e.target.value })} className="input" rows="2" placeholder="Any additional notes..." />
               </div>
             </div>
           )}
 
           <div className="flex gap-3 pt-2">
-            <button type="submit" className="btn-primary flex-1">
-              {expense ? 'Update' : 'Add'} Expense
-            </button>
-            <button type="button" onClick={onClose} className="btn-secondary flex-1">
-              Cancel
-            </button>
+            <button type="submit" className="btn-primary flex-1">{expense ? 'Save' : 'Add'}</button>
+            <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
           </div>
         </form>
       </div>

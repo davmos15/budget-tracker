@@ -10,6 +10,7 @@ import BillAllocation from './BillAllocation'
 import SettingsPage from './Settings'
 import ShareBudgetModal from './ShareBudgetModal'
 import OnboardingFlow from './OnboardingFlow'
+import { normalizeSalaries, normalizeSettings } from '../lib/migrate'
 
 export default function BudgetApp({ onBack }) {
   const { user, budget, budgetId, budgetOwnerId, budgetLoading, isNewBudget, setIsNewBudget } = useFirebase()
@@ -38,29 +39,30 @@ export default function BudgetApp({ onBack }) {
   const [people, setPeople] = useState([])
   const [salaries, setSalaries] = useState([])
   const [settings, setSettings] = useState({})
-  const [lastTransfers, setLastTransfers] = useState({})
   const [staticAmounts, setStaticAmounts] = useState([])
 
   useEffect(() => {
     if (budget) {
+      const people = budget.people || []
+      const salaries = normalizeSalaries(budget.salaries)
       setExpenses(budget.expenses || [])
       setCategories(budget.categories || [])
-      setPeople(budget.people || [])
-      setSalaries(budget.salaries || [])
-      setSettings(budget.settings || {})
-      setLastTransfers(budget.lastTransfers || {})
+      setPeople(people)
+      setSalaries(salaries)
+      setSettings(normalizeSettings(budget.settings, people, salaries, budget.lastTransfers))
       setStaticAmounts(budget.staticAmounts || [])
     }
   }, [budget])
 
+  // Save one field, or several at once when `field` is an object of { field: data }
   const saveToFirebase = async (field, data) => {
     if (!budgetId || !budgetOwnerId) return
 
     setSaving(true)
     try {
-      await updateDoc(doc(db, 'users', budgetOwnerId, 'budgets', budgetId), {
-        [field]: data
-      })
+      await updateDoc(doc(db, 'users', budgetOwnerId, 'budgets', budgetId),
+        typeof field === 'object' ? field : { [field]: data }
+      )
     } catch (error) {
       console.error('Error saving to Firebase:', error)
       alert('Failed to save changes. Please try again.')
@@ -94,11 +96,6 @@ export default function BudgetApp({ onBack }) {
     saveToFirebase('settings', newSettings)
   }
 
-  const updateLastTransfers = (newTransfers) => {
-    setLastTransfers(newTransfers)
-    saveToFirebase('lastTransfers', newTransfers)
-  }
-
   const updateStaticAmounts = (newAmounts) => {
     setStaticAmounts(newAmounts)
     saveToFirebase('staticAmounts', newAmounts)
@@ -109,7 +106,7 @@ export default function BudgetApp({ onBack }) {
       setShowOnboarding(true)
       setIsNewBudget(false)
     }
-  }, [isNewBudget, budget])
+  }, [isNewBudget, budget, setIsNewBudget])
 
   const handleOnboardingComplete = (data) => {
     setShowOnboarding(false)
@@ -228,6 +225,8 @@ export default function BudgetApp({ onBack }) {
               people={people}
               categories={categories}
               settings={settings}
+              staticAmounts={staticAmounts}
+              onOpenBills={() => setActiveTab('allocation')}
             />
           )}
           {activeTab === 'expenses' && (
@@ -259,10 +258,9 @@ export default function BudgetApp({ onBack }) {
               categories={categories}
               settings={settings}
               setSettings={updateSettings}
-              lastTransfers={lastTransfers}
-              setLastTransfers={updateLastTransfers}
               staticAmounts={staticAmounts}
               setStaticAmounts={updateStaticAmounts}
+              onOpenSettings={() => setActiveTab('settings')}
             />
           )}
           {activeTab === 'settings' && (
@@ -270,6 +268,8 @@ export default function BudgetApp({ onBack }) {
               settings={settings}
               setSettings={updateSettings}
               people={people}
+              salaries={salaries}
+              expenses={expenses}
               budgetCode={budget?.info?.code}
               budgetName={budget?.info?.name}
               onBack={onBack}
