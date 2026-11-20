@@ -341,6 +341,12 @@ export default function BillAllocation({
                     <div className="text-right flex-shrink-0">
                       <p className="text-lg font-bold text-slate-900 dark:text-white">{money(p.perTransfer)}</p>
                       <p className="text-xs text-slate-400">{p.frequency ? `per ${PERIOD_NOUN[p.frequency]}` : '—'}</p>
+                      {method === 'custom' && (() => {
+                        const pts = settings.peopleTransferSettings?.[person.id] || {}
+                        if (pts.topUp) return <p className="text-[11px] text-brand-500">tops up the rest</p>
+                        if (pts.amountType === 'percent') return <p className="text-[11px] text-brand-500">{Number(pts.percentOfIncome) || 0}% of pay</p>
+                        return null
+                      })()}
                     </div>
                   </div>
                   {p.nextDate && (

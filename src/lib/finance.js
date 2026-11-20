@@ -237,7 +237,7 @@ export const SPLIT_METHODS = [
   { value: 'income', label: 'In proportion to income', help: 'Each person covers bills in proportion to what they earn.' },
   { value: 'equal', label: 'Split equally', help: 'Everyone puts in the same share.' },
   { value: 'owner', label: 'Each covers their own bills', help: 'Each person covers the bills assigned to them (shared bills are split equally).' },
-  { value: 'custom', label: 'Fixed amounts + top-up', help: 'Set a fixed transfer for some people; whoever is marked "tops up" covers the rest.' }
+  { value: 'custom', label: 'Set amounts + top-up', help: 'Some people put in a fixed amount or a % of their pay; whoever is marked "tops up" covers the rest.' }
 ]
 
 /**
@@ -271,9 +271,15 @@ export function transferPlan({ expenses, people, salaries, settings, date = toda
     let fixedTotal = 0
     ids.forEach(id => {
       if (toppers.includes(id)) return
-      const sched = transferSchedule(id, settings, salaries)
-      const per = sched ? PER_YEAR[sched.frequency] : 0
-      annual[id] = (Number(pts[id]?.fixedAmount) || 0) * per
+      if (pts[id]?.amountType === 'percent') {
+        // A share of take-home pay, e.g. 100% = the whole salary goes to bills
+        const pct = Math.max(0, Number(pts[id]?.percentOfIncome) || 0)
+        annual[id] = personAnnualIncome(id, salaries, date) * pct / 100
+      } else {
+        const sched = transferSchedule(id, settings, salaries)
+        const per = sched ? PER_YEAR[sched.frequency] : 0
+        annual[id] = (Number(pts[id]?.fixedAmount) || 0) * per
+      }
       fixedTotal += annual[id]
     })
     const remainder = Math.max(0, annualNeeded - fixedTotal)

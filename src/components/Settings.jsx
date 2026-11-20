@@ -448,40 +448,51 @@ export default function SettingsPage({ settings, setSettings, people, salaries =
                   />
                 )}
 
-                {splitMethod === 'custom' && people.length > 1 && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-slate-200 dark:border-slate-600">
-                    <label className="flex items-center gap-2 cursor-pointer pt-3">
-                      <input
-                        type="radio"
-                        name={`mode-${person.id}`}
-                        checked={!ps.topUp}
-                        onChange={() => updatePersonTransferSettings(person.id, { topUp: false })}
-                        className="h-4 w-4 text-brand-600 focus:ring-brand-500"
-                      />
-                      <span className="text-sm text-slate-700 dark:text-slate-200">Fixed amount</span>
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        step="0.01"
-                        disabled={!!ps.topUp}
-                        value={ps.fixedAmount ?? ''}
-                        onChange={(e) => updatePersonTransferSettings(person.id, { fixedAmount: e.target.value === '' ? null : parseFloat(e.target.value) })}
-                        className="input py-1.5 text-sm w-32 disabled:opacity-50"
-                        placeholder="per transfer"
-                      />
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer sm:pt-3">
-                      <input
-                        type="radio"
-                        name={`mode-${person.id}`}
-                        checked={!!ps.topUp}
-                        onChange={() => updatePersonTransferSettings(person.id, { topUp: true })}
-                        className="h-4 w-4 text-brand-600 focus:ring-brand-500"
-                      />
-                      <span className="text-sm text-slate-700 dark:text-slate-200">Tops up the rest</span>
-                    </label>
-                  </div>
-                )}
+                {splitMethod === 'custom' && people.length > 1 && (() => {
+                  const mode = ps.topUp ? 'topUp' : ps.amountType === 'percent' ? 'percent' : 'fixed'
+                  const setMode = (m) => updatePersonTransferSettings(person.id, m === 'topUp' ? { topUp: true } : { topUp: false, amountType: m })
+                  return (
+                    <div className="space-y-2 pt-3 border-t border-slate-200 dark:border-slate-600">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name={`mode-${person.id}`} checked={mode === 'fixed'} onChange={() => setMode('fixed')} className="h-4 w-4 text-brand-600 focus:ring-brand-500" />
+                        <span className="text-sm text-slate-700 dark:text-slate-200 w-36">Fixed amount</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.01"
+                          disabled={mode !== 'fixed'}
+                          value={ps.fixedAmount ?? ''}
+                          onChange={(e) => updatePersonTransferSettings(person.id, { fixedAmount: e.target.value === '' ? null : parseFloat(e.target.value) })}
+                          className="input py-1.5 text-sm w-32 disabled:opacity-50"
+                          placeholder="per transfer"
+                        />
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name={`mode-${person.id}`} checked={mode === 'percent'} onChange={() => setMode('percent')} className="h-4 w-4 text-brand-600 focus:ring-brand-500" />
+                        <span className="text-sm text-slate-700 dark:text-slate-200 w-36">% of take-home pay</span>
+                        <div className="relative w-32">
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            step="1"
+                            min="0"
+                            max="100"
+                            disabled={mode !== 'percent'}
+                            value={ps.percentOfIncome ?? ''}
+                            onChange={(e) => updatePersonTransferSettings(person.id, { percentOfIncome: e.target.value === '' ? null : parseFloat(e.target.value) })}
+                            className="input py-1.5 pr-7 text-sm disabled:opacity-50"
+                            placeholder="100"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
+                        </div>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name={`mode-${person.id}`} checked={mode === 'topUp'} onChange={() => setMode('topUp')} className="h-4 w-4 text-brand-600 focus:ring-brand-500" />
+                        <span className="text-sm text-slate-700 dark:text-slate-200">Tops up the rest</span>
+                      </label>
+                    </div>
+                  )
+                })()}
               </div>
             )
           })}

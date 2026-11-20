@@ -175,6 +175,18 @@ test('custom split: fixed monthly + fortnightly top-up covers bills exactly', ()
   assert.equal(plan.shortfallAnnual, 0)
 })
 
+test('percentage of pay: 100% of Davi\'s salary, Zeec tops up the rest', () => {
+  const pctSettings = { transferSplit: 'custom', peopleTransferSettings: { 1: { amountType: 'percent', percentOfIncome: 100 }, 2: { topUp: true } } }
+  const bigBills = [...sheetBills, bill('Extra', 2000, 'monthly', 'direct_debit', '2026-11-01')]
+  const plan = transferPlan({ expenses: bigBills, people, salaries, settings: pctSettings, date: today })
+  near(plan.people[1].perTransfer, 7702) // whole monthly salary
+  near(plan.people[2].perTransfer, (plan.annualNeeded - 7702 * 12) / 26)
+  near(plan.people[1].annual + plan.people[2].annual, plan.annualNeeded)
+  // 50% halves it
+  const half = transferPlan({ expenses: bigBills, people, salaries, settings: { ...pctSettings, peopleTransferSettings: { 1: { amountType: 'percent', percentOfIncome: 50 }, 2: { topUp: true } } }, date: today })
+  near(half.people[1].perTransfer, 3851)
+})
+
 test('income split is proportional to income', () => {
   const plan = transferPlan({ expenses: sheetBills, people, salaries, settings: { transferSplit: 'income' }, date: today })
   const inc1 = 7702 * 12, inc2 = 3132 * 26
