@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, PieChart, BarChart3, AlertTriangle, Clock, CalendarClock, Bell, CreditCard, Zap, Wallet, PiggyBank } from 'lucide-react'
 import InfoTooltip from './InfoTooltip'
-import { annualAmount, billStatus, billsSnapshot, formatMoney, isAutoPay, isBill, isActive, PERIOD_NOUN } from '../lib/finance'
+import { annualAmount, billStatus, billsSnapshot, billOwnersMatter, formatMoney, isAutoPay, isBill, isActive, PERIOD_NOUN } from '../lib/finance'
 import { parseDate, diffDays, today as todayFn, formatShort, relativeDays } from '../lib/dates'
 import { PieChart as RechartsPieChart, Pie, Cell, Sector, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 
@@ -158,16 +158,27 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
   }
 
   // Per-person breakdown data
+  // When bills aren't split by owner, expenses belong to the household and each
+  // person's share is their bills-account transfer instead.
+  const pooled = !billOwnersMatter(settings, people)
   const personBreakdowns = useMemo(() => {
-    const hasShared = expenses.some(e => !people.some(p => p.id === e.personId))
-    const everyone = hasShared ? [...people, { id: '__shared', name: 'Shared', color: '#94a3b8' }] : people
+    const isPerson = (e) => people.some(p => p.id === e.personId)
+    const isExpense = (e) => (e.itemType || 'expense') === 'expense'
+    const hasShared = expenses.some(e => !isPerson(e) || (pooled && isExpense(e)))
+    const extra = { id: '__shared', name: pooled ? 'Household' : 'Shared', color: '#94a3b8' }
+    const everyone = hasShared ? [...people, extra] : people
     return everyone.map(person => {
       const personSalaries = salaries.filter(s => s.personId === person.id)
       const personIncome = personSalaries.reduce((sum, s) => sum + yearly(s), 0)
+      const isGroup = person.id === '__shared'
 
-      const belongs = (e) => person.id === '__shared' ? !people.some(p => p.id === e.personId) : e.personId === person.id
-      const personExpenses = expenses.filter(e => belongs(e) && (e.itemType || 'expense') === 'expense')
+      const belongs = (e) => {
+        if (pooled && isExpense(e)) return isGroup
+        return isGroup ? !isPerson(e) : e.personId === person.id
+      }
+      const personExpenses = expenses.filter(e => belongs(e) && isExpense(e))
       const personSavings = expenses.filter(e => belongs(e) && e.itemType === 'saving')
+      const billsTransfer = pooled && !isGroup ? (snap.plan.people[person.id]?.annual || 0) : 0
 
       const expensesByCategory = categories
         .map(cat => ({
@@ -209,10 +220,13 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
         uncategorizedSavings,
         totalPersonExpenses,
         totalPersonSavings,
-        disposable: personIncome - totalPersonExpenses - totalPersonSavings
+        billsTransfer,
+        isGroup,
+        billsTotal: personExpenses.filter(isBill).reduce((sum, e) => sum + yearly(e), 0),
+        disposable: personIncome - totalPersonExpenses - totalPersonSavings - billsTransfer
       }
     })
-  }, [expenses, salaries, people, categories])
+  }, [expenses, salaries, people, categories, pooled, snap])
 
   const expenseChartData = categories
     .filter(c => expensesByCategory[c.id]?.amount > 0)
@@ -482,7 +496,7 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
             <InfoTooltip text="Income, expenses, and savings broken down by person and category. Click a category header to collapse or expand it." />
           </div>
           <div className="space-y-6 max-h-[600px] overflow-y-auto pr-1">
-            {personBreakdowns.map(({ person, salaries: personSalaries, personIncome, expensesByCategory: personExpCats, savingsByCategory: personSavCats, uncategorizedSavings, totalPersonExpenses, totalPersonSavings, disposable }) => (
+            {personBreakdowns.map(({ person, salaries: personSalaries, personIncome, expensesByCategory: personExpCats, savingsByCategory: personSavCats, uncategorizedSavings, totalPersonExpenses, totalPersonSavings, disposable, billsTransfer, isGroup, billsTotal }) => (
               <div key={person.id}>
                 {/* Person header */}
                 <div className="flex items-center gap-2.5 mb-3 pb-2 border-b border-slate-200">
@@ -624,21 +638,43 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
                 )}
 
                 {/* Person totals */}
-                <div className="bg-slate-50 rounded-xl px-3 py-2 mt-2 space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Expenses</span>
-                    <span className="text-rose-600 font-medium">-{formatCurrency(getAmountForPeriod(totalPersonExpenses))}</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Savings</span>
-                    <span className="text-violet-600 font-medium">-{formatCurrency(getAmountForPeriod(totalPersonSavings))}</span>
-                  </div>
+                <div className="bg-slate-50 dark:bg-slate-700/40 rounded-xl px-3 py-2 mt-2 space-y-1">
+                  {pooled && isGroup ? (
+                    <>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500">Bills (paid by transfers)</span>
+                        <span className="text-rose-600 font-medium">{formatCurrency(getAmountForPeriod(billsTotal))}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500">Day-to-day spending</span>
+                        <span className="text-rose-600 font-medium">{formatCurrency(getAmountForPeriod(totalPersonExpenses - billsTotal))}</span>
+                      </div>
+                    </>
+                  ) : pooled ? (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Bills account transfer</span>
+                      <span className="text-rose-600 font-medium">-{formatCurrency(getAmountForPeriod(billsTransfer))}</span>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Expenses</span>
+                      <span className="text-rose-600 font-medium">-{formatCurrency(getAmountForPeriod(totalPersonExpenses))}</span>
+                    </div>
+                  )}
+                  {(!isGroup || totalPersonSavings > 0) && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Savings</span>
+                      <span className="text-violet-600 font-medium">-{formatCurrency(getAmountForPeriod(totalPersonSavings))}</span>
+                    </div>
+                  )}
+                  {!(pooled && isGroup) && (
                   <div className="flex justify-between text-sm font-semibold border-t border-slate-200 pt-1 mt-1">
-                    <span className="text-slate-700">Disposable</span>
+                    <span className="text-slate-700 dark:text-slate-200">{pooled ? 'Left after bills & savings' : 'Disposable'}</span>
                     <span className={disposable >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
                       {disposable < 0 ? '-' : ''}{formatCurrency(getAmountForPeriod(disposable))}
                     </span>
                   </div>
+                  )}
                 </div>
               </div>
             ))}

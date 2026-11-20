@@ -401,6 +401,24 @@ export default function SettingsPage({ settings, setSettings, people, salaries =
           </div>
         )}
 
+        {people.length > 1 && splitMethod !== 'owner' && (
+          <label className="flex items-start gap-3 mb-6 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={localSettings.assignBillsToPeople === true}
+              onChange={(e) => setLocalSettings({ ...localSettings, assignBillsToPeople: e.target.checked })}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            />
+            <span>
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Still assign bills to people</span>
+              <span className="block text-xs text-slate-500">
+                With this split it doesn't matter who each bill belongs to, so the app treats bills as household costs and doesn't ask.
+                Turn this on if you still want to label them. Savings and income stay per person either way.
+              </span>
+            </span>
+          </label>
+        )}
+
         <div className="space-y-4">
           {people.map(person => {
             const ps = localSettings.peopleTransferSettings?.[person.id] || {}

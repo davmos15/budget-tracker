@@ -1,0 +1,17 @@
+{
+  "name": "budget-tracker-mcp",
+  "private": true,
+  "version": "1.0.0",
+  "description": "MCP server that lets Claude read and update a Budget Tracker budget in Firestore",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test *.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "firebase-admin": "^13.10.0",
+    "zod": "^3.25.76"
+  }
+}

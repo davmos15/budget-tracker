@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Plus, Edit2, Trash2, X, Search, ChevronUp, ChevronDown, Receipt, PiggyBank, TrendingDown, Wallet, Copy, PauseCircle } from 'lucide-react'
 import InfoTooltip from './InfoTooltip'
-import { amountPer, annualAmount, billStatus, effectiveAmount, formatMoney, isActive, isAutoPay, isBill, itemType, PAYMENT_TYPES, PERIOD_NOUN, perPeriod } from '../lib/finance'
+import { amountPer, annualAmount, billOwnersMatter, billStatus, effectiveAmount, formatMoney, isActive, isAutoPay, isBill, itemType, PAYMENT_TYPES, PERIOD_NOUN, perPeriod } from '../lib/finance'
 import { FREQUENCIES, FREQUENCY_LABELS } from '../lib/schedule'
 import { formatShort, toISODate } from '../lib/dates'
 
@@ -19,6 +19,9 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
   const [sortKey, setSortKey] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
   const [duplicateFrom, setDuplicateFrom] = useState(null)
+  // With a pooled split it doesn't matter who a bill belongs to, so we don't ask
+  const ownersMatter = billOwnersMatter(settings, people)
+  const showOwner = (e) => ownersMatter || e.itemType === 'saving'
 
   const viewModes = ['weekly', 'fortnightly', 'monthly', 'yearly']
   const periodLabels = PERIOD_NOUN
@@ -27,6 +30,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
   const filteredExpenses = useMemo(() => {
     return expenses.filter(expense => {
       if (filterCategory && expense.categoryId !== parseInt(filterCategory)) return false
+      if (filterPerson && !showOwner(expense)) return false
       if (filterPerson === 'shared' && people.some(p => p.id === expense.personId)) return false
       if (filterPerson && filterPerson !== 'shared' && expense.personId !== parseInt(filterPerson)) return false
       if (filterPaymentType && expense.paymentType !== filterPaymentType) return false
@@ -273,11 +277,13 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
             {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
 
-          <select value={filterPerson} onChange={(e) => setFilterPerson(e.target.value)} className="input py-2 w-auto">
+          {(ownersMatter || expenses.some(e => e.itemType === 'saving')) && people.length > 1 && (
+          <select value={filterPerson} onChange={(e) => setFilterPerson(e.target.value)} className="input py-2 w-auto" title={ownersMatter ? 'Person' : 'Person (savings only)'}>
             <option value="">All People</option>
             {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             <option value="shared">Shared</option>
           </select>
+          )}
 
           <select value={filterItemType} onChange={(e) => setFilterItemType(e.target.value)} className="input py-2 w-auto">
             <option value="">Expenses & Savings</option>
@@ -368,7 +374,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
                             <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-semibold" style={{ backgroundColor: person?.color || '#94a3b8' }}>
                               {person?.name?.charAt(0) || 'S'}
                             </div>
-                            <span className="text-slate-600 dark:text-slate-300">{person?.name || 'Shared'}</span>
+                            <span className="text-slate-600 dark:text-slate-300">{showOwner(expense) ? (person?.name || 'Shared') : 'Household'}</span>
                           </div>
                         </td>
                         <td className="table-cell">
@@ -482,6 +488,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
           template={duplicateFrom}
           categories={categories}
           people={people}
+          ownersMatter={ownersMatter}
           currency={settings.currency || '$'}
           onSave={handleAddExpense}
           onClose={() => { setShowAddModal(false); setEditingExpense(null); setDuplicateFrom(null) }}
@@ -504,7 +511,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
   )
 }
 
-function ExpenseModal({ expense, template, categories, people, currency, onSave, onClose, onAddCategory }) {
+function ExpenseModal({ expense, template, categories, people, ownersMatter = true, currency, onSave, onClose, onAddCategory }) {
   const src = expense || template
   const [formData, setFormData] = useState({
     name: src?.name || '',
@@ -652,6 +659,7 @@ function ExpenseModal({ expense, template, categories, people, currency, onSave,
                 </select>
               </div>
             )}
+            {(isSaving || ownersMatter) && people.length > 1 && (
             <div className={isSaving ? 'col-span-2' : ''}>
               <label className="input-label">For</label>
               <select value={formData.personId ?? ''} onChange={(e) => set({ personId: e.target.value })} className="input">
@@ -659,6 +667,7 @@ function ExpenseModal({ expense, template, categories, people, currency, onSave,
                 {people.length > 1 && <option value="">Shared</option>}
               </select>
             </div>
+            )}
           </div>
 
           {showNewCategory && !isSaving && (

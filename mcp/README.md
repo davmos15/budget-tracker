@@ -1,0 +1,47 @@
+# Budget Tracker MCP server
+
+Lets Claude (Claude Code, or any MCP client) read your budget and update bills,
+buffers and bills-account settings directly in Firestore — the same data the
+app shows, with the same maths (`src/lib`).
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `list_budgets` | Budgets in the project |
+| `get_budget` | Everything in a budget, plus the Bills-tab numbers (required today, surplus, transfers, each bill's next due date and amount set aside) |
+| `update_items` | Change one or more expenses/savings in one save |
+| `add_item` / `remove_item` | Add or delete an expense/saving |
+| `mark_paid` | Record a bill as paid (moves a manual bill to its next due date) |
+| `update_bills_account` | Balance, credit card owing, split method, per-person transfer options |
+| `set_buffer` | Add, change or remove a buffer |
+
+Every change is a Firestore transaction, so it won't overwrite something saved
+in the app at the same moment.
+
+## Setup
+
+1. **Create a service account key** (Google Cloud console, project `budget-tracker-7fad5`):
+   IAM & Admin → Service accounts → Create service account → give it the role
+   **Cloud Datastore User** (Firestore read/write only) → Keys → Add key → JSON.
+   (Firebase console → Project settings → Service accounts → "Generate new private
+   key" also works, but that key can do *everything* in the project.)
+2. **Give it to the environment** as `FIREBASE_SERVICE_ACCOUNT`: paste the JSON
+   (on one line) or its base64 (`base64 -w0 key.json`). Optionally set
+   `BUDGET_ID` if you have more than one budget.
+3. **Network**: the environment must allow `firestore.googleapis.com` and
+   `oauth2.googleapis.com`.
+4. Start a new Claude Code session in this repo. `.mcp.json` registers the
+   server; `start.sh` installs its dependencies on first run.
+
+Anyone with the key can read and change the budget, so keep it out of the repo
+and delete the key in Google Cloud if it's ever exposed.
+
+## Running it yourself
+
+```bash
+cd mcp
+npm ci
+FIREBASE_SERVICE_ACCOUNT="$(cat key.json)" node server.js   # speaks MCP over stdio
+npm test                                                     # data-rule tests (no Firebase needed)
+```

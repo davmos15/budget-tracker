@@ -30,4 +30,9 @@ export default [
       ],
     },
   },
+  {
+    // The MCP server runs in Node, not the browser
+    files: ['mcp/**/*.js'],
+    languageOptions: { globals: globals.node },
+  },
 ]

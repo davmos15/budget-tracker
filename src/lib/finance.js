@@ -233,6 +233,16 @@ export function transferSchedule(personId, settings, salaries) {
   return fromPay
 }
 
+/**
+ * Does it matter who each bill belongs to? Only when bills are split by owner,
+ * or the user has asked to keep assigning them anyway.
+ */
+export function billOwnersMatter(settings, people) {
+  if (!people || people.length < 2) return false
+  const method = settings?.transferSplit || 'income'
+  return method === 'owner' || settings?.assignBillsToPeople === true
+}
+
 export const SPLIT_METHODS = [
   { value: 'income', label: 'In proportion to income', help: 'Each person covers bills in proportion to what they earn.' },
   { value: 'equal', label: 'Split equally', help: 'Everyone puts in the same share.' },

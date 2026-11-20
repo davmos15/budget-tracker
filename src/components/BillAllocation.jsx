@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { Plus, X, AlertTriangle, CheckCircle2, Edit2, ChevronUp, ChevronDown, ArrowRightLeft, Info, Undo2, CalendarPlus, TrendingDown } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts'
 import InfoTooltip from './InfoTooltip'
-import { billsSnapshot, forecast, formatMoney, annualAmount, perPeriod, isAutoPay, markBillPaid, paymentTypeInfo, SPLIT_METHODS, PERIOD_NOUN, isBill } from '../lib/finance'
+import { billsSnapshot, billOwnersMatter, forecast, formatMoney, annualAmount, perPeriod, isAutoPay, markBillPaid, paymentTypeInfo, SPLIT_METHODS, PERIOD_NOUN, isBill } from '../lib/finance'
 import { FREQUENCY_LABELS, describeSchedule } from '../lib/schedule'
 import { formatShort, relativeDays, todayISO, diffDays, today, formatDate } from '../lib/dates'
 
@@ -486,7 +486,7 @@ export default function BillAllocation({
                             <p className="font-medium text-slate-900 dark:text-white text-sm">{bill.name}</p>
                             <p className="text-xs text-slate-400">
                               {money(status.amount)} {FREQUENCY_LABELS[bill.frequency]?.toLowerCase()} · {paymentTypeInfo(bill.paymentType).short}
-                              {person && people.length > 1 && <> · {person.name}</>}
+                              {person && billOwnersMatter(settings, people) && <> · {person.name}</>}
                             </p>
                           </div>
                         </div>
