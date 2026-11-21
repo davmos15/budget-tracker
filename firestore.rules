@@ -52,8 +52,9 @@ service cloud.firestore {
           return verifiedEmail() && myEmail() in resource.data.info.get('invitedEmails', []);
         }
 
-        // Only members can read
-        allow read: if isMember();
+        // The owner can list their own budgets (list queries can't check each
+        // doc's members); everyone else must be a member
+        allow read: if signedIn() && (request.auth.uid == userId || isMember());
 
         // Only the budget owner can create budgets in their collection
         allow create: if signedIn() &&

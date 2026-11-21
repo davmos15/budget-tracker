@@ -98,3 +98,11 @@ test('pending invites: only the verified owner of the email can read or delete',
   // anyone signed in may still leave an invite (it grants nothing on its own)
   await assertSucceeds(setDoc(doc(as('alice'), 'pendingInvites/new@x.com'), { invites: [{ ownerId: 'alice', budgetId: 'b1' }] }))
 })
+
+test('owner can list their own budgets; others cannot list them', async () => {
+  await assertSucceeds(getDocs(collection(as('alice'), 'users/alice/budgets')))
+  await assertFails(getDocs(collection(as('carol'), 'users/alice/budgets')))
+  await assertFails(getDocs(collection(as('mallory'), 'users/alice/budgets')))
+  // members still read the budget directly
+  await assertSucceeds(getDoc(doc(as('carol'), BUDGET)))
+})
