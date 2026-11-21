@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node --test src/lib/*.test.js"
+    "test": "node --test \"src/lib/**/*.test.js\"",
+    "test:rules": "npx -y firebase-tools@14 emulators:exec --only firestore --project demo-budget \"node --test --test-reporter=spec firestore-tests/rules.test.js\""
   },
   "dependencies": {
     "firebase": "^11.8.1",
@@ -19,6 +20,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",
+    "@firebase/rules-unit-testing": "^4.0.1",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
     "@vitejs/plugin-react": "^4.4.1",

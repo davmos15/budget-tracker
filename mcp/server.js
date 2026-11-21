@@ -6,9 +6,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { listBudgets, readBudget, changeBudget } from './firestore.js'
+import { readFile } from 'node:fs/promises'
+import { listBudgets, readBudget, changeBudget, readLedger, writeMonths, writeConfig } from './firestore.js'
 import { summarize, updateItems, addItem, removeItem, markPaid, updateBillsSettings, setBuffer, PAYMENT_TYPE_VALUES } from './budget.js'
 import { FREQUENCIES } from '../src/lib/schedule.js'
+import { importStatement, listTransactions, reviewQueue, categorise, addRule, removeRule, setAccount, spendingSummary } from './ledger.js'
+import { KIND_LABELS } from '../src/lib/import/ledger.js'
 
 const server = new McpServer({ name: 'budget-tracker', version: '1.0.0' })
 
@@ -110,5 +113,108 @@ server.registerTool('set_buffer', {
     remove: z.boolean().optional()
   }
 }, run(async ({ budget, ...rest }) => changeBudget(budget, (d) => setBuffer(d, rest))))
+
+// ---------------------------------------------------------------------------
+// Imported bank transactions
+// ---------------------------------------------------------------------------
+
+/** Read the ledger, run a pure change, write only what changed. */
+const changeLedger = (budget, change, { dryRun = false } = {}) => (async () => {
+  const ledger = await readLedger(budget)
+  const { months, config, summary } = change(ledger)
+  if (!dryRun) {
+    await writeConfig(ledger.meta, config)
+    await writeMonths(ledger.meta, months)
+  }
+  return { ...summary, monthsChanged: Object.keys(months).length, saved: !dryRun }
+})()
+
+const kindEnum = z.enum(Object.keys(KIND_LABELS))
+const accountKind = z.enum(['transaction', 'offset', 'loan', 'card'])
+
+server.registerTool('import_statement', {
+  description: 'Import a bank/card CSV export from this computer (ING or Qantas format) into the budget. Transactions already imported are skipped. The file is read locally; only parsed transactions are saved. Use dryRun first to preview.',
+  inputSchema: {
+    budget: budgetArg,
+    path: z.string().describe('Full path to the .csv file'),
+    account: z.string().describe('Account name (existing, or a new one to create), e.g. "Spending"'),
+    accountKind: accountKind.optional().describe('For a new account'),
+    number: z.string().optional().describe('Account number, so transfers to it pair up'),
+    repaymentMatch: z.string().optional().describe('For a card: text in its repayment description, e.g. "QANTAS"'),
+    dryRun: z.boolean().optional()
+  }
+}, run(async ({ budget, path, dryRun, ...opts }) => {
+  if (!/\.csv$/i.test(path)) throw new Error('Only .csv files can be imported.')
+  const text = await readFile(path, 'utf8')
+  return changeLedger(budget, (l) => importStatement(l, text, { ...opts, filename: path.split(/[\\/]/).pop() }), { dryRun })
+}))
+
+server.registerTool('list_transactions', {
+  description: 'Search imported transactions. Amounts are negative for money out.',
+  inputSchema: {
+    budget: budgetArg,
+    from: date.optional(), to: date.optional(),
+    account: z.string().optional(), kind: kindEnum.optional(), category: z.string().optional(),
+    search: z.string().optional().describe('Text in payee, description or note'),
+    needsReview: z.boolean().optional(),
+    limit: z.number().int().positive().max(500).optional()
+  }
+}, run(async ({ budget, ...f }) => listTransactions(await readLedger(budget), f)))
+
+server.registerTool('review_queue', {
+  description: 'Transactions that need a category (or are transfers to unknown accounts), grouped by payee, biggest first. Ask the user about unclear ones, then use categorise_transactions.',
+  inputSchema: { budget: budgetArg, limit: z.number().int().positive().max(200).optional(), from: date.optional() }
+}, run(async ({ budget, ...o }) => reviewQueue(await readLedger(budget), o)))
+
+server.registerTool('categorise_transactions', {
+  description: 'Set the category and/or kind of transactions, picked by ids or payee (merchant). remember=true saves a rule for that payee so future imports are handled too.',
+  inputSchema: {
+    budget: budgetArg,
+    ids: z.array(z.string()).optional(),
+    merchant: z.string().optional(),
+    category: z.string().nullable().optional(),
+    kind: kindEnum.optional().describe('e.g. transfer (between own accounts), debt_repayment, refund, income, spend'),
+    remember: z.boolean().optional()
+  }
+}, run(async ({ budget, ...o }) => changeLedger(budget, (l) => categorise(l, o))))
+
+server.registerTool('add_rule', {
+  description: 'Add a categorisation rule. Newest rules win. Applies to all imported transactions now and future imports.',
+  inputSchema: {
+    budget: budgetArg,
+    field: z.enum(['merchant', 'rawDesc', 'label']).optional(),
+    op: z.enum(['equals', 'contains', 'regex']).optional(),
+    value: z.string(),
+    category: z.string().nullable().optional(),
+    kind: kindEnum.optional(),
+    account: z.string().optional().describe('Only for this account'),
+    direction: z.enum(['in', 'out']).optional().describe('Only money in, or only money out')
+  }
+}, run(async ({ budget, ...o }) => changeLedger(budget, (l) => addRule(l, o))))
+
+server.registerTool('list_rules', {
+  description: 'List categorisation rules and accounts.',
+  inputSchema: { budget: budgetArg }
+}, run(async ({ budget }) => (await readLedger(budget)).config))
+
+server.registerTool('remove_rule', {
+  description: 'Delete a categorisation rule by id.',
+  inputSchema: { budget: budgetArg, id: z.string() }
+}, run(async ({ budget, id }) => changeLedger(budget, (l) => removeRule(l, id))))
+
+server.registerTool('set_account', {
+  description: 'Add or update an account used for imports (name, kind, account number, card repayment text).',
+  inputSchema: {
+    budget: budgetArg,
+    account: z.string().describe('Existing account name/id, or a new name'),
+    name: z.string().optional(), kind: accountKind.optional(),
+    number: z.string().nullable().optional(), repaymentMatch: z.string().nullable().optional()
+  }
+}, run(async ({ budget, ...o }) => changeLedger(budget, (l) => setAccount(l, o))))
+
+server.registerTool('spending_summary', {
+  description: 'Spending by category and total income between two dates (transfers, card repayments and loan payments excluded).',
+  inputSchema: { budget: budgetArg, from: date.optional(), to: date.optional() }
+}, run(async ({ budget, ...o }) => spendingSummary(await readLedger(budget), o)))
 
 await server.connect(new StdioServerTransport())

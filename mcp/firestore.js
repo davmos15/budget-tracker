@@ -5,8 +5,12 @@
 //   GOOGLE_APPLICATION_CREDENTIALS  path to the service-account JSON file
 //   your own Google login           after `gcloud auth application-default login`
 //                                   (handy when running Claude Code on your own computer)
+// Whose budgets (required — the admin login can see every user's data, so we
+// only ever touch budgets this person is a member of):
+//   BUDGET_USER_EMAIL               your sign-in email, or
+//   mcp/config.local.json           { "userEmail": "you@example.com" }  (gitignored)
 // Optional:
-//   BUDGET_ID                       default budget when you have more than one
+//   BUDGET_ID (or "budget" in config.local.json)  default budget when you have more than one
 
 import { initializeApp, cert, applicationDefault, getApps } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
@@ -53,21 +57,51 @@ export function getDb() {
   return db
 }
 
-/** All budgets in the project: [{ ownerId, budgetId, name, members }] */
+function localConfig() {
+  const file = new URL('./config.local.json', import.meta.url)
+  if (!existsSync(file)) return {}
+  try { return JSON.parse(readFileSync(file, 'utf8')) } catch { return {} }
+}
+
+function configuredEmail() {
+  return process.env.BUDGET_USER_EMAIL || localConfig().userEmail || null
+}
+
+let myUid = null
+/** The uid of the person this server works for. */
+async function currentUid() {
+  if (myUid) return myUid
+  const email = configuredEmail()
+  if (!email) throw new Error('Say whose budgets to use: set BUDGET_USER_EMAIL or create mcp/config.local.json with { "userEmail": "you@example.com" }.')
+  const snap = await getDb().collection('userEmails').doc(email.trim().toLowerCase()).get()
+  if (!snap.exists) throw new Error(`No app user with email ${email}. Sign in to the app once with that email.`)
+  myUid = snap.get('uid')
+  return myUid
+}
+
+/** Budgets you are a member of (your own + shared with you): [{ ownerId, budgetId, name, members }] */
 export async function listBudgets() {
-  const snap = await getDb().collectionGroup('budgets').get()
-  return snap.docs.map(d => ({
-    ownerId: d.ref.parent.parent.id,
-    budgetId: d.id,
-    name: d.get('info.name') || d.id,
-    members: (d.get('info.members') || []).length
-  }))
+  const uid = await currentUid()
+  const users = getDb().collection('users')
+  const own = (await users.doc(uid).collection('budgets').get()).docs
+  const shared = (await users.doc(uid).get()).get('sharedBudgets') || []
+  const sharedDocs = await Promise.all(shared.map(s => users.doc(s.ownerId).collection('budgets').doc(s.budgetId).get()))
+  const seen = new Set()
+  return [...own, ...sharedDocs]
+    .filter(d => d.exists && (d.get('info.members') || []).includes(uid))
+    .filter(d => !seen.has(d.ref.path) && seen.add(d.ref.path))
+    .map(d => ({
+      ownerId: d.ref.parent.parent.id,
+      budgetId: d.id,
+      name: d.get('info.name') || d.id,
+      members: (d.get('info.members') || []).length
+    }))
 }
 
 /** Find a budget by id or name; defaults to BUDGET_ID or the only budget. */
 export async function resolveBudget(ref) {
   const all = await listBudgets()
-  const want = ref || process.env.BUDGET_ID
+  const want = ref || process.env.BUDGET_ID || localConfig().budget
   if (!want) {
     if (all.length === 1) return all[0]
     throw new Error(`There are ${all.length} budgets — say which one: ${all.map(b => `"${b.name}"`).join(', ')}.`)
@@ -104,4 +138,43 @@ export async function changeBudget(ref, change) {
     tx.update(docRef, update)
     return message
   })
+}
+
+// ---------------------------------------------------------------------------
+// Imported transactions: txMonths/{YYYY-MM} and txMeta/config
+// ---------------------------------------------------------------------------
+
+/** { meta, byMonth: { 'YYYY-MM': txns }, config: { accounts, rules } } */
+export async function readLedger(ref) {
+  const b = await resolveBudget(ref)
+  const base = budgetRef(b)
+  const [months, cfg] = await Promise.all([base.collection('txMonths').get(), base.collection('txMeta').doc('config').get()])
+  const byMonth = {}
+  months.forEach(d => { byMonth[d.id] = d.get('transactions') || [] })
+  const c = cfg.exists ? cfg.data() : {}
+  return { meta: b, byMonth, config: { accounts: c.accounts || [], rules: c.rules || [] } }
+}
+
+const stripUndefined = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined))
+
+/** Write whole months; an empty month is deleted. */
+export async function writeMonths(meta, byMonth) {
+  const col = budgetRef(meta).collection('txMonths')
+  const entries = Object.entries(byMonth)
+  for (let i = 0; i < entries.length; i += 25) {
+    const batch = getDb().batch()
+    for (const [month, txns] of entries.slice(i, i + 25)) {
+      if (txns.length === 0) batch.delete(col.doc(month))
+      else batch.set(col.doc(month), { month, transactions: txns.map(stripUndefined), updatedAt: new Date() })
+    }
+    await batch.commit()
+  }
+}
+
+export async function writeConfig(meta, config) {
+  await budgetRef(meta).collection('txMeta').doc('config').set({
+    accounts: config.accounts.map(stripUndefined),
+    rules: config.rules.map(stripUndefined),
+    updatedAt: new Date()
+  }, { merge: true })
 }

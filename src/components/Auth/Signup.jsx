@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { createUserWithEmailAndPassword, updateProfile, signInWithPopup } from 'firebase/auth'
+import { createUserWithEmailAndPassword, updateProfile, signInWithPopup, sendEmailVerification } from 'firebase/auth'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { auth, googleProvider, db } from '../../firebase'
 import { Mail, Lock, User, AlertCircle, UserPlus, Wallet } from 'lucide-react'
@@ -41,6 +41,8 @@ export default function Signup({ onSwitchToLogin }) {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password)
       await updateProfile(userCredential.user, { displayName: name })
+      // Email invites only work once the address is verified
+      sendEmailVerification(userCredential.user).catch(() => {})
       await createUserDocument(userCredential.user)
     } catch (error) {
       setError(error.message)

@@ -205,7 +205,8 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
   const joinBudget = async (code) => {
     try {
       // Look up budget via the budgetCodes collection
-      const codeDoc = await getDoc(doc(db, 'budgetCodes', code.toUpperCase()))
+      const upperCode = code.toUpperCase()
+      const codeDoc = await getDoc(doc(db, 'budgetCodes', upperCode))
 
       if (!codeDoc.exists()) {
         setError('Invalid budget code')
@@ -214,25 +215,27 @@ export default function BudgetSelection({ user, onSelectBudget, onLogout }) {
 
       const { ownerId: ownerUserId, budgetId } = codeDoc.data()
 
-      // Verify the budget still exists
-      const budgetRef = doc(db, 'users', ownerUserId, 'budgets', budgetId)
-      const budgetDoc = await getDoc(budgetRef)
-
-      if (!budgetDoc.exists()) {
-        setError('This budget no longer exists')
-        return
-      }
-
-      const budgetData = budgetDoc.data()
-
-      if (budgetData.info.members.includes(user.uid)) {
+      if (ownerUserId === user.uid || budgets.some(b => b.id === budgetId)) {
         setError('You are already a member of this budget')
         return
       }
 
-      await updateDoc(budgetRef, {
-        'info.members': arrayUnion(user.uid)
-      })
+      // The join record proves we know the code; the rules require it before
+      // a non-member can add themselves (non-members can't read the budget first)
+      await setDoc(doc(db, 'budgetCodes', upperCode, 'joins', user.uid), { at: serverTimestamp() })
+
+      const budgetRef = doc(db, 'users', ownerUserId, 'budgets', budgetId)
+      try {
+        await updateDoc(budgetRef, {
+          'info.members': arrayUnion(user.uid)
+        })
+      } catch (err) {
+        if (err.code === 'permission-denied' || err.code === 'not-found') {
+          setError('This code is no longer valid')
+          return
+        }
+        throw err
+      }
 
       await updateDoc(doc(db, 'users', user.uid), {
         sharedBudgets: arrayUnion({

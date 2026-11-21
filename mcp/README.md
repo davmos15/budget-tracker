@@ -15,9 +15,28 @@ app shows, with the same maths (`src/lib`).
 | `mark_paid` | Record a bill as paid (moves a manual bill to its next due date) |
 | `update_bills_account` | Balance, credit card owing, split method, per-person transfer options |
 | `set_buffer` | Add, change or remove a buffer |
+| `import_statement` | Import an ING or Qantas CSV from this computer (re-importing skips duplicates; `dryRun` previews) |
+| `list_transactions` | Search imported transactions |
+| `review_queue` | Payees that still need a category, biggest first |
+| `categorise_transactions` | Set category/kind by ids or payee; `remember` saves a rule |
+| `add_rule` / `remove_rule` / `list_rules` | Manage categorisation rules |
+| `set_account` | Account name, type, number (so transfers pair) and card repayment text |
+| `spending_summary` | Spending by category and income for a date range |
 
 Every change is a Firestore transaction, so it won't overwrite something saved
 in the app at the same moment.
+
+## Whose budgets
+
+The server's login can see every user in the project, so it only works with
+budgets **you** are a member of. Tell it who you are, either with
+`BUDGET_USER_EMAIL` or a gitignored `mcp/config.local.json`:
+
+```json
+{ "userEmail": "you@example.com", "budget": "Our Budget" }
+```
+
+`budget` (or `BUDGET_ID`) picks the default budget when you have several.
 
 ## Quickest: on your own computer (no key needed)
 

@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFirebase } from '../contexts/FirebaseContext'
-import { LayoutDashboard, Receipt, CreditCard, Calculator, Settings, Share2, ArrowLeft, Loader, Wallet, Moon, Sun } from 'lucide-react'
+import { LayoutDashboard, Receipt, CreditCard, Calculator, Settings, Share2, ArrowLeft, Loader, Wallet, Moon, Sun, PieChart, MoreHorizontal } from 'lucide-react'
 import Dashboard from './Dashboard'
 import Expenses from './Expenses'
 import Salaries from './Salaries'
 import BillAllocation from './BillAllocation'
+import SpendingTab from './Spending/SpendingTab'
 import SettingsPage from './Settings'
 import ShareBudgetModal from './ShareBudgetModal'
 import OnboardingFlow from './OnboardingFlow'
@@ -17,6 +18,7 @@ export default function BudgetApp({ onBack }) {
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [activeTab, setActiveTab] = useState('dashboard')
   const [showShareModal, setShowShareModal] = useState(false)
+  const [showMore, setShowMore] = useState(false)
   const [saving, setSaving] = useState(false)
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -133,8 +135,13 @@ export default function BudgetApp({ onBack }) {
     { id: 'expenses', name: 'Budget', icon: Receipt },
     { id: 'salaries', name: 'Income', icon: CreditCard },
     { id: 'allocation', name: 'Bills', icon: Calculator },
+    { id: 'spending', name: 'Spending', icon: PieChart },
     { id: 'settings', name: 'Settings', icon: Settings }
   ]
+
+  // Phones show four tabs plus a More menu
+  const mobileMain = tabs.slice(0, 4)
+  const mobileMore = tabs.slice(4)
 
   if (budgetLoading) {
     return (
@@ -229,6 +236,7 @@ export default function BudgetApp({ onBack }) {
               onOpenBills={() => setActiveTab('allocation')}
             />
           )}
+          {activeTab === 'spending' && <SpendingTab settings={settings} />}
           {activeTab === 'expenses' && (
             <Expenses
               expenses={expenses}
@@ -280,13 +288,27 @@ export default function BudgetApp({ onBack }) {
 
       {/* Mobile bottom nav */}
       <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 shadow-lg sm:hidden z-40">
+        {showMore && (
+          <div className="border-b border-slate-200 dark:border-slate-700 py-1">
+            {mobileMore.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => { setActiveTab(tab.id); setShowMore(false) }}
+                className={`w-full flex items-center gap-3 px-5 py-3 text-sm ${activeTab === tab.id ? 'text-brand-600 font-medium' : 'text-slate-600 dark:text-slate-300'}`}
+              >
+                <tab.icon className="h-5 w-5" />
+                {tab.name}
+              </button>
+            ))}
+          </div>
+        )}
         <nav className="flex justify-around py-2 px-2">
-          {tabs.map((tab) => (
+          {[...mobileMain, { id: '__more', name: 'More', icon: MoreHorizontal }].map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => (tab.id === '__more' ? setShowMore(!showMore) : (setActiveTab(tab.id), setShowMore(false)))}
               className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all ${
-                activeTab === tab.id
+                activeTab === tab.id || (tab.id === '__more' && (showMore || mobileMore.some(t => t.id === activeTab)))
                   ? 'text-brand-600'
                   : 'text-slate-400'
               }`}

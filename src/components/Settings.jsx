@@ -8,6 +8,7 @@ import ShareBudgetModal from './ShareBudgetModal'
 import ScheduleEditor from './ScheduleEditor'
 import { SPLIT_METHODS, transferPlan, formatMoney, PERIOD_NOUN, primaryPaySchedule } from '../lib/finance'
 import { describeSchedule } from '../lib/schedule'
+import { deleteLedger } from '../lib/txStore'
 
 export default function SettingsPage({ settings, setSettings, people, salaries = [], expenses = [], budgetCode, budgetName, onBack }) {
   const { user, budget, budgetId, budgetOwnerId } = useFirebase()
@@ -154,6 +155,7 @@ export default function SettingsPage({ settings, setSettings, people, salaries =
       const ownBudgetsRef = collection(db, 'users', user.uid, 'budgets')
       const ownBudgetsSnapshot = await getDocs(ownBudgetsRef)
       for (const budgetDoc of ownBudgetsSnapshot.docs) {
+        await deleteLedger(user.uid, budgetDoc.id)
         await deleteDoc(budgetDoc.ref)
       }
       if (userData?.sharedBudgets?.length > 0) {
@@ -181,7 +183,17 @@ export default function SettingsPage({ settings, setSettings, people, salaries =
     }
   }
 
-  const inviteByEmail = async (email) => {
+  const inviteByEmail = async (rawEmail) => {
+    const email = rawEmail.trim().toLowerCase()
+    const budgetRef = doc(db, 'users', budgetOwnerId, 'budgets', budgetId)
+
+    // Only verified owners of an invited email may join, so record the invite
+    // on the budget itself (admins only)
+    const alreadyInvited = budget?.info?.invitedEmails?.includes(email)
+    if (!alreadyInvited) {
+      await updateDoc(budgetRef, { 'info.invitedEmails': arrayUnion(email) })
+    }
+
     // Look up user by email
     const emailDoc = await getDoc(doc(db, 'userEmails', email))
 
@@ -209,15 +221,12 @@ export default function SettingsPage({ settings, setSettings, people, salaries =
       return 'added'
     } else {
       // User hasn't signed in yet — store a pending invite
-      const pendingRef = doc(db, 'pendingInvites', email)
-      const pendingDoc = await getDoc(pendingRef)
-      const existing = pendingDoc.exists() ? (pendingDoc.data().invites || []) : []
-
-      // Check if already invited to this budget
-      if (existing.some(inv => inv.budgetId === budgetId && inv.ownerId === budgetOwnerId)) {
+      // (We can't read someone else's pending invites, so check the budget's own list)
+      if (alreadyInvited) {
         throw new Error('This email has already been invited to this budget')
       }
 
+      const pendingRef = doc(db, 'pendingInvites', email)
       await setDoc(pendingRef, {
         invites: arrayUnion({
           budgetId: budgetId,
@@ -237,6 +246,8 @@ export default function SettingsPage({ settings, setSettings, people, salaries =
     try {
       const isOwner = budget?.info?.createdBy === user.uid
       if (isOwner) {
+        // Delete imported transactions first (the rules need the budget doc to allow it)
+        await deleteLedger(user.uid, budgetId)
         // Delete the budget doc
         await deleteDoc(doc(db, 'users', user.uid, 'budgets', budgetId))
         // Delete the budget code lookup

@@ -11,6 +11,9 @@ node_modules
 /dist
 
 # misc
+# Bank/card exports must never be committed
+*.csv
+*.xlsx
 .DS_Store
 .env.local
 .env.development.local
@@ -59,3 +62,5 @@ desktop.ini
 # package-lock.json
 # yarn.lock
 # pnpm-lock.yaml
+# MCP: who the local server works for
+mcp/config.local.json
