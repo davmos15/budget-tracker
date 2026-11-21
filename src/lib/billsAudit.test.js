@@ -123,6 +123,16 @@ test('unevenly timed bills are judged on the yearly total only', () => {
   assert.deepEqual([gas.items[0].suggestion.frequency, gas.items[0].suggestion.amount], ['monthly', 108.11])
 })
 
+test('bills marked correct as is are ok and not matched to anything', async () => {
+  const { CONFIRMED } = await import('./billsAudit.js')
+  const items = [item({ name: 'Cleaner', amount: 130, frequency: 'monthly', paymentType: 'manual' })]
+  const found = [series({ merchant: 'Clean Co', category: 'Services', amount: 130, frequency: 'monthly' })]
+  const a = auditBills({ expenses: items, series: found, today: TODAY, links: { Cleaner: CONFIRMED } })
+  assert.equal(a.items[0].status, 'ok')
+  assert.equal(a.items[0].confirmed, true)
+  assert.equal(a.items[0].series, undefined)
+})
+
 test('applySuggestions updates changed items and adds new bills (nothing else touched)', async () => {
   const { applySuggestions } = await import('./billsAudit.js')
   const items = [item({ name: 'Internet', amount: 68.9, frequency: 'monthly' }), item({ name: 'Rego', amount: 864.4, frequency: 'yearly', paymentType: 'manual' })]

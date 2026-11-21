@@ -6,7 +6,8 @@
 //     newBills: [{ series, suggestion }]   recurring payments not in the budget
 //     variableBuffer, totals: { budgetAnnual, suggestedAnnual, newAnnual }
 //   }
-// `series` come from detectRecurring(). `links` = { expenseId: seriesKey } set by hand;
+// `series` come from detectRecurring(). `links` = { expenseId: seriesKey | CONFIRMED } set by hand
+// (CONFIRMED = "correct as is", e.g. paid in cash or by someone else);
 // `dismissed` = series keys the user said aren't bills.
 
 import { annualAmount, isActive, itemType, isAutoPay } from './finance.js'
@@ -41,6 +42,9 @@ function lastSeenByName(expense, txns) {
 }
 
 const round2 = (n) => Math.round(n * 100) / 100
+
+/** Link value meaning "this bill is right as it is" (paid outside the imported accounts). */
+export const CONFIRMED = '__confirmed'
 
 /** Detected frequency → a budget frequency (bimonthly becomes a half-amount monthly). */
 export function toBudgetSchedule({ frequency, amount }) {
@@ -145,7 +149,7 @@ export function auditBills({ expenses, series, today, links = {}, dismissed = []
   // 2. Best remaining pairs, highest score first
   const pairs = []
   for (const e of checked) {
-    if (matchOf[e.id]) continue
+    if (matchOf[e.id] || links[e.id] === CONFIRMED) continue
     for (const s of series) {
       // Only live bills are matched automatically (stopped ones can still be linked by hand)
       if (taken.has(s.key) || !s.active || !s.isBill) continue
@@ -165,6 +169,7 @@ export function auditBills({ expenses, series, today, links = {}, dismissed = []
   const items = checked.map(e => {
     const m = matchOf[e.id]
     if (m) return { expense: e, series: m.s, score: round2(m.score), linked: !!m.linked, ...compare(e, m.s) }
+    if (links[e.id] === CONFIRMED) return { expense: e, status: 'ok', confirmed: true }
     // Not a regular pattern: maybe paid once in the last year (yearly bills)
     const seen = RARE.has(e.frequency) ? lastSeenByName(e, recentOut) : null
     if (seen) {

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { ScanSearch, ChevronDown, ChevronUp, Check, Plus, EyeOff, Link2, TrendingDown, TrendingUp, Loader } from 'lucide-react'
 import { useFirebase } from '../contexts/FirebaseContext'
 import { detectRecurring } from '../lib/recurring'
-import { auditBills, applySuggestions, billsAccountFlows } from '../lib/billsAudit'
+import { auditBills, applySuggestions, billsAccountFlows, CONFIRMED } from '../lib/billsAudit'
 import { saveConfig } from '../lib/txStore'
 import { transferPlan, formatMoney, PERIOD_NOUN } from '../lib/finance'
 import { FREQUENCY_LABELS } from '../lib/schedule'
@@ -170,6 +170,7 @@ export default function BillsCheck({ ledger, expenses, setExpenses, categories, 
                       <select className="input !py-1 !text-xs max-w-[11rem]" value={ledger.config.billLinks[r.expense.id] || ''} disabled={busy}
                         onChange={(e) => link(r.expense.id, e.target.value)}>
                         <option value="">Link to a payee…</option>
+                        <option value={CONFIRMED}>✓ Correct as is (paid in cash / elsewhere)</option>
                         {linkable.map(s => <option key={s.key} value={s.key}>{s.merchant} · {describe(s)}{s.active ? '' : ' (stopped)'}</option>)}
                       </select>
                     </label>
@@ -185,7 +186,8 @@ export default function BillsCheck({ ledger, expenses, setExpenses, categories, 
               </button>
               {showOk && groups.ok.map(r => (
                 <Row key={r.expense.id} r={r} money={money} dateFmt={dateFmt}
-                  detail={<>{r.series ? r.series.merchant : r.lastSeen?.merchant} · {money(r.expense.amount)} {FREQUENCY_LABELS[r.expense.frequency]?.toLowerCase()}</>} />
+                  detail={<>{r.confirmed ? 'Marked correct by you' : (r.series ? r.series.merchant : r.lastSeen?.merchant)} · {money(r.expense.amount)} {FREQUENCY_LABELS[r.expense.frequency]?.toLowerCase()}</>}
+                  action={r.confirmed ? <button className="btn-ghost !py-1 text-xs" disabled={busy} onClick={() => link(r.expense.id, null)}>Undo</button> : undefined} />
               ))}
             </div>
           )}

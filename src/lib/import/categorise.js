@@ -37,6 +37,7 @@ export const DEFAULT_CATEGORIES = [
   { name: 'Entertainment', color: '#f97316' },
   { name: 'Travel', color: '#06b6d4' },
   { name: 'Gifts & donations', color: '#e11d48' },
+  { name: 'Shule & community', color: '#be185d' },
   { name: 'Services', color: '#64748b' },
   { name: 'Fees & interest', color: '#475569' },
   { name: 'Tax', color: '#334155' },
