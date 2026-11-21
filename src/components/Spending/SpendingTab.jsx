@@ -1,11 +1,14 @@
 import { useMemo, useState } from 'react'
 import { Loader, AlertTriangle } from 'lucide-react'
 import { needsReview } from '../../lib/import/ledger'
+import { todayISO, toISODate, addMonths, parseDate } from '../../lib/dates'
 import TransactionList from './TransactionList'
 import ReviewQueue from './ReviewQueue'
 import ImportPanel from './ImportPanel'
+import SpendingOverview from './SpendingOverview'
 
 const VIEWS = [
+  { id: 'overview', name: 'Overview' },
   { id: 'transactions', name: 'Transactions' },
   { id: 'review', name: 'Review' },
   { id: 'import', name: 'Import' }
@@ -13,9 +16,13 @@ const VIEWS = [
 
 export default function SpendingTab({ ledger, settings }) {
   const [view, setView] = useState(null)
-  const reviewCount = useMemo(() => ledger.txns.filter(needsReview).length, [ledger.txns])
+  // Same window the Review screen opens on (last 12 months)
+  const reviewCount = useMemo(() => {
+    const since = toISODate(addMonths(parseDate(todayISO()), -12))
+    return ledger.txns.filter(t => t.date >= since && needsReview(t)).length
+  }, [ledger.txns])
   // Start on Import when there's nothing yet
-  const current = view || (ledger.txns.length === 0 ? 'import' : 'transactions')
+  const current = view || (ledger.txns.length === 0 ? 'import' : 'overview')
 
   return (
     <div className="space-y-4">
@@ -38,6 +45,7 @@ export default function SpendingTab({ ledger, settings }) {
         <div className="card p-8 flex justify-center"><Loader className="h-6 w-6 animate-spin text-brand-600" /></div>
       ) : (
         <>
+          {current === 'overview' && <SpendingOverview ledger={ledger} settings={settings} />}
           {current === 'transactions' && <TransactionList ledger={ledger} settings={settings} />}
           {current === 'review' && <ReviewQueue ledger={ledger} settings={settings} />}
           {current === 'import' && <ImportPanel ledger={ledger} onDone={() => setView('review')} />}

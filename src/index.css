@@ -74,6 +74,9 @@
   .dark .card {
     @apply bg-slate-800 border-slate-700;
   }
+  /* Gap between stacked chart segments = the card surface */
+  .card { --chart-gap: #ffffff; }
+  .dark .card { --chart-gap: #1e293b; }
 
   /* Badges */
   .badge {
