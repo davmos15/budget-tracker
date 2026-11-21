@@ -118,6 +118,20 @@ test('paused / ended / price-changed items', () => {
   assert.equal(billStatus({ amount: 10, frequency: 'monthly', paused: true, nextDueDate: '2026-12-01' }, today).accrued, 0)
 })
 
+test('a fund (Yakira) keeps building with every fortnight and is never due', () => {
+  const fund = { amount: 20, frequency: 'fortnightly', paymentType: 'manual', fund: true, fundStart: '2024-03-22', fundOpening: 500 }
+  const st = billStatus(fund, today)
+  assert.equal(st.overdue, false)
+  assert.equal(st.nextDue, null)
+  assert.equal(st.fund, true)
+  near(st.accrued, 500 + 20 * diffDays('2024-03-22', today) / 14, 0.01)
+  assert.deepEqual(markBillPaid(fund), {})
+  // Counts towards the bills transfers, and the forecast never "pays it out"
+  near(annualAmount(fund, today), 520)
+  const fc = forecast({ expenses: [fund], people, salaries, settings: { transferSplit: 'income' }, balance: 0, date: today, days: 30 })
+  assert.equal(fc.payments.length, 0)
+})
+
 test('accrual over a whole cycle equals the bill amount', () => {
   const b = { amount: 300, frequency: 'monthly', paymentType: 'direct_debit', nextDueDate: '2026-12-05' }
   near(accrualBetween(b, '2026-11-05', '2026-12-05'), 300)

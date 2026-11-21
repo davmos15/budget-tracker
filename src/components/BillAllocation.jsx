@@ -108,7 +108,7 @@ export default function BillAllocation({
   }, [snap, sortKey, sortDir, categories, people])
 
   const attention = rows.filter(r => r.status.active && (
-    (r.status.scheduled && !isAutoPay(r.bill) && r.status.daysUntilDue <= 7) || !r.status.scheduled
+    !r.status.fund && ((r.status.scheduled && !isAutoPay(r.bill) && r.status.daysUntilDue <= 7) || !r.status.scheduled)
   ))
 
   const totalPerFortnight = rows.reduce((s, r) => s + r.perFortnight, 0)
@@ -128,6 +128,14 @@ export default function BillAllocation({
 
   const DueCell = ({ status, bill }) => {
     if (!status.active) return <span className="text-xs text-slate-400">{bill.paused ? 'Paused' : 'Ended'}</span>
+    if (status.fund) {
+      return (
+        <div>
+          <p className="text-sm text-emerald-600 font-medium">Building up</p>
+          <p className="text-[11px] text-slate-400">never due</p>
+        </div>
+      )
+    }
     if (!status.scheduled) {
       return (
         <label className="inline-flex items-center gap-1 text-xs text-amber-600 cursor-pointer">
@@ -169,7 +177,7 @@ export default function BillAllocation({
   }
 
   const PayButton = ({ bill, status }) => {
-    if (!status.active || isAutoPay(bill)) return null
+    if (!status.active || isAutoPay(bill) || status.fund) return null
     const urgent = status.overdue || (status.scheduled && status.daysUntilDue <= 7)
     return (
       <button

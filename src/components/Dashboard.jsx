@@ -85,7 +85,7 @@ export default function Dashboard({ expenses, salaries, people, categories, sett
 
       if (isBill(expense)) {
         const st = billStatus(expense, today)
-        if (st.scheduled) {
+        if (st.scheduled && !st.fund) {
           if (st.overdue) {
             alerts.push({
               type: 'overdue',

@@ -34,6 +34,9 @@ const itemFields = {
   subscriptionEndDate: date.nullable().optional(),
   priceChangeDate: date.nullable().optional(),
   priceChangeAmount: z.number().nullable().optional(),
+  fund: z.boolean().optional().describe('true = builds up in the bills account with every transfer and is never due (e.g. a giving fund)'),
+  fundStart: date.nullable().optional().describe('For funds: the date it started building'),
+  fundOpening: z.number().optional().describe('For funds: the amount it started with'),
   notes: z.string().nullable().optional(),
   company: z.string().nullable().optional()
 }

@@ -86,7 +86,7 @@ export function cleanFields(fields, { people, categories }) {
     if (!['expense', 'saving'].includes(fields.itemType)) throw new BudgetError('itemType must be "expense" or "saving".')
     out.itemType = fields.itemType
   }
-  for (const k of ['lastPaid', 'nextDueDate', 'subscriptionEndDate', 'priceChangeDate']) {
+  for (const k of ['lastPaid', 'nextDueDate', 'subscriptionEndDate', 'priceChangeDate', 'fundStart']) {
     if (!has(k)) continue
     const v = fields[k]
     if (v === null || v === '') { out[k] = ''; continue }
@@ -96,7 +96,8 @@ export function cleanFields(fields, { people, categories }) {
   if (has('priceChangeAmount')) {
     out.priceChangeAmount = fields.priceChangeAmount === null || fields.priceChangeAmount === '' ? null : round2(Number(fields.priceChangeAmount))
   }
-  for (const k of ['paused', 'fromBillsAccount']) if (has(k)) out[k] = !!fields[k]
+  for (const k of ['paused', 'fromBillsAccount', 'fund']) if (has(k)) out[k] = !!fields[k]
+  if (has('fundOpening')) out.fundOpening = round2(Number(fields.fundOpening) || 0)
   for (const k of ['notes', 'company']) if (has(k)) out[k] = fields[k] == null ? '' : String(fields[k])
   if (has('person')) out.personId = resolvePerson(people, fields.person)
   if (has('category')) {
@@ -180,6 +181,7 @@ export function summarize(raw, date = todayISO()) {
         nextDueStored: e.nextDueDate || null,
         nextDue: st.nextDue ? toISODate(st.nextDue) : null,
         setAsideNow: round2(st.accrued),
+        fund: st.fund ? { since: e.fundStart || e.lastPaid || null, opening: e.fundOpening || 0 } : undefined,
         overdue: st.overdue,
         notes: e.notes || undefined,
         subscriptionEndDate: e.subscriptionEndDate || undefined,

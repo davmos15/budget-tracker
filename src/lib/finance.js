@@ -105,9 +105,23 @@ export function isBill(item) {
 // Bill schedule & status
 // ---------------------------------------------------------------------------
 
+/**
+ * A "fund" builds up in the bills account with every transfer and is never paid
+ * out on a schedule (e.g. money put aside for giving). It is never due or overdue.
+ *   fundStart:   date it started building ('YYYY-MM-DD')
+ *   fundOpening: amount it started with
+ */
+export function isFund(item) {
+  return !!item?.fund
+}
+
 /** The bill's due-date schedule, anchored at its next due date (or last paid + 1 cycle). */
 export function billSchedule(bill) {
   if (!bill || !isValidFrequency(bill.frequency)) return null
+  if (isFund(bill)) {
+    const start = bill.fundStart || bill.lastPaid
+    return start && parseDate(start) ? { frequency: bill.frequency, anchor: start } : null
+  }
   if (bill.nextDueDate && parseDate(bill.nextDueDate)) {
     return { frequency: bill.frequency, anchor: bill.nextDueDate }
   }
@@ -128,6 +142,13 @@ export function billStatus(bill, date = todayFn()) {
   const active = isActive(bill, d)
   const base = { active, scheduled: false, accrued: 0, fraction: 0, overdue: false, daysOverdue: 0, dueToday: false, debitedToday: false, nextDue: null, cycleStart: null, daysUntilDue: null, amount: effectiveAmount(bill, d) }
   if (!active) return base
+
+  if (isFund(bill)) {
+    const opening = Number(bill.fundOpening) || 0
+    const start = bill.fundStart || bill.lastPaid
+    const built = start && parseDate(start) <= d ? accrualBetween(bill, start, d) : 0
+    return { ...base, fund: true, scheduled: true, accrued: opening + built, fraction: 0 }
+  }
 
   const sched = billSchedule(bill)
   if (!sched) {
@@ -195,6 +216,7 @@ export function accrualBetween(bill, from, to) {
 
 /** New field values after paying a manual bill once. */
 export function markBillPaid(bill, paidDate = todayFn()) {
+  if (isFund(bill)) return {}
   const sched = billSchedule(bill)
   const paid = toISODate(paidDate)
   if (!sched) {
@@ -336,7 +358,7 @@ function paymentEvents(bills, from, to) {
   const d = parseDate(from)
   const end = parseDate(to)
   const payments = []
-  bills.filter(b => isActive(b, d)).forEach(b => {
+  bills.filter(b => isActive(b, d) && !isFund(b)).forEach(b => {
     const sched = billSchedule(b)
     if (!sched) return
     if (isAutoPay(b)) {

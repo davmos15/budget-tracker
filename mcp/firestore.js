@@ -3,11 +3,16 @@
 // Credentials (first one found):
 //   FIREBASE_SERVICE_ACCOUNT        the service-account JSON itself (or base64 of it)
 //   GOOGLE_APPLICATION_CREDENTIALS  path to the service-account JSON file
+//   your own Google login           after `gcloud auth application-default login`
+//                                   (handy when running Claude Code on your own computer)
 // Optional:
 //   BUDGET_ID                       default budget when you have more than one
 
 import { initializeApp, cert, applicationDefault, getApps } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
+import { readFileSync, existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 
 let db = null
 
@@ -19,8 +24,23 @@ function loadCredential() {
     try { json = JSON.parse(text) } catch { throw new Error('FIREBASE_SERVICE_ACCOUNT is set but is not valid JSON (or base64 JSON).') }
     return { credential: cert(json), projectId: json.project_id }
   }
-  if (process.env.GOOGLE_APPLICATION_CREDENTIALS) return { credential: applicationDefault() }
-  throw new Error('No Firebase credentials. Set FIREBASE_SERVICE_ACCOUNT (service-account JSON) in the environment and start a new session.')
+  const adcFile = process.platform === 'win32'
+    ? join(process.env.APPDATA || '', 'gcloud', 'application_default_credentials.json')
+    : join(homedir(), '.config', 'gcloud', 'application_default_credentials.json')
+  if (process.env.GOOGLE_APPLICATION_CREDENTIALS || existsSync(adcFile)) {
+    return { credential: applicationDefault(), projectId: process.env.GOOGLE_CLOUD_PROJECT || firebaseProject() }
+  }
+  throw new Error('No Firebase credentials. Either run `gcloud auth application-default login` on this computer, or set FIREBASE_SERVICE_ACCOUNT (service-account JSON) and start a new session.')
+}
+
+/** Project id from the repo's .firebaserc */
+function firebaseProject() {
+  try {
+    const rc = JSON.parse(readFileSync(new URL('../.firebaserc', import.meta.url), 'utf8'))
+    return rc.projects?.default
+  } catch {
+    return undefined
+  }
 }
 
 export function getDb() {

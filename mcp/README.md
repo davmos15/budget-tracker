@@ -19,7 +19,15 @@ app shows, with the same maths (`src/lib`).
 Every change is a Firestore transaction, so it won't overwrite something saved
 in the app at the same moment.
 
-## Setup
+## Quickest: on your own computer (no key needed)
+
+1. Install the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) and run
+   `gcloud auth application-default login` with the Google account that owns the
+   Firebase project.
+2. In this repo, start Claude Code (`claude`) and approve the `budget-tracker`
+   MCP server when asked. It uses that login and the project in `.firebaserc`.
+
+## Setup for cloud sessions
 
 1. **Create a service account key** (Google Cloud console, project `budget-tracker-7fad5`):
    IAM & Admin → Service accounts → Create service account → give it the role
@@ -32,7 +40,7 @@ in the app at the same moment.
 3. **Network**: the environment must allow `firestore.googleapis.com` and
    `oauth2.googleapis.com`.
 4. Start a new Claude Code session in this repo. `.mcp.json` registers the
-   server; `start.sh` installs its dependencies on first run.
+   server; `start.mjs` installs its dependencies on first run.
 
 Anyone with the key can read and change the budget, so keep it out of the repo
 and delete the key in Google Cloud if it's ever exposed.

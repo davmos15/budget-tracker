@@ -169,6 +169,7 @@ export default function Expenses({ expenses, setExpenses, categories, setCategor
   const getDueStatus = (expense) => {
     if (!isActive(expense)) return { text: expense.paused ? 'Paused' : 'Ended', className: 'text-slate-400' }
     const st = billStatus(expense)
+    if (st.fund) return { text: 'Building up', className: 'text-emerald-600' }
     if (!st.scheduled) return null
     if (st.overdue) return { text: `${st.daysOverdue}d overdue`, className: 'text-rose-600 font-semibold' }
     if (st.debitedToday) return { text: 'Paid today', className: 'text-emerald-500' }
@@ -525,6 +526,9 @@ function ExpenseModal({ expense, template, categories, people, ownersMatter = tr
     fromBillsAccount: src?.fromBillsAccount !== false,
     paused: !!src?.paused,
     lastPaid: src?.lastPaid || '',
+    fund: !!src?.fund,
+    fundStart: src?.fundStart || src?.lastPaid || '',
+    fundOpening: src?.fundOpening ?? '',
     nextDueDate: src?.nextDueDate || (src ? toISODate(billStatus(src).nextDue) : ''),
     subscriptionEndDate: src?.subscriptionEndDate || '',
     priceChangeDate: src?.priceChangeDate || '',
@@ -560,7 +564,8 @@ function ExpenseModal({ expense, template, categories, people, ownersMatter = tr
       amount: parseFloat(formData.amount),
       categoryId: isSaving ? null : parseInt(formData.categoryId),
       personId,
-      priceChangeAmount: formData.priceChangeAmount === '' ? null : parseFloat(formData.priceChangeAmount)
+      priceChangeAmount: formData.priceChangeAmount === '' ? null : parseFloat(formData.priceChangeAmount),
+      fundOpening: formData.fundOpening === '' ? 0 : parseFloat(formData.fundOpening)
     })
   }
 
@@ -696,6 +701,37 @@ function ExpenseModal({ expense, template, categories, people, ownersMatter = tr
           )}
 
           {tracksDueDate && (
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.fund}
+                onChange={(e) => set({ fund: e.target.checked })}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+              />
+              <span>
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Builds up — never due</span>
+                <span className="block text-xs text-slate-500">For money that grows in the bills account with every transfer and is only spent now and then (e.g. giving).</span>
+              </span>
+            </label>
+          )}
+
+          {tracksDueDate && formData.fund && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="input-label">Building since</label>
+                <input type="date" value={formData.fundStart} onChange={(e) => set({ fundStart: e.target.value })} className="input" />
+              </div>
+              <div>
+                <label className="input-label">Starting amount</label>
+                <input type="number" inputMode="decimal" step="0.01" value={formData.fundOpening} onChange={(e) => set({ fundOpening: e.target.value })} className="input" placeholder="0.00" />
+              </div>
+              <p className="col-span-2 -mt-2 text-xs text-slate-500">
+                Set aside = starting amount + {formData.amount ? `${money(Number(formData.amount))} ` : ''}every {PERIOD_NOUN[formData.frequency]} since then.
+              </p>
+            </div>
+          )}
+
+          {tracksDueDate && !formData.fund && (
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="input-label">How it's paid</label>
