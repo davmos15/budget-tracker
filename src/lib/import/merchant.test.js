@@ -59,6 +59,6 @@ test('cleanMerchant drops stray backslashes', () => {
 
 test('bpayBiller', async () => {
   const { bpayBiller } = await import('./merchant.js')
-  assert.equal(bpayBiller('Glen Eira Rates - BPAY Bill Payment - Receipt 513809 To GLEN EIRA COUN'), 'GLEN EIRA COUN')
+  assert.equal(bpayBiller('Council Rates - BPAY Bill Payment - Receipt 513809 To CITY COUNCIL'), 'CITY COUNCIL')
   assert.equal(bpayBiller('Coles - Visa Purchase'), null)
 })

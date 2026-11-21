@@ -52,12 +52,33 @@ A modern, mobile-first budget tracking PWA with real-time collaboration, smart n
 - Bills paid from elsewhere (e.g. groceries) can be excluded from the bills account but still count in the budget
 - Buffers for fixed amounts that should always stay in the account
 
+### Bank imports & spending
+- Import ING (everyday, offset, loan) and Qantas card CSV exports — files are read in the browser and only the transactions are saved (members-only)
+- Internal transfers are paired by receipt number; card repayments and loan redraws are never counted as spending; re-importing skips duplicates
+- Categories from your own rules, a built-in Australian merchant list and the bank's categories; a review queue for the rest ("remember for this payee" makes a rule)
+- **Spending overview**: spending, income, mortgage and left over per week / fortnight / month / year, monthly chart by category, trends vs normal, new payees, top payees per category
+
+### Bills check
+- Finds recurring payments (fixed or variable, price rises, stopped payees, yearly bills, rates paid at odd times) and compares them with your bills
+- One-click updates for changed bills, regular payments missing from the budget, possible cancellations, manual links — and what each person's transfer would need to be
+- What actually went in and out of the bills account over the last 12 months
+
+### Wealth & plans
+- Net worth (home value you enter, cash, mortgage from the loan exports, other debts) and its history
+- Each loan's balance, rate (worked out from interest charged, or set your own), repayment, payoff date, offset saving
+- "What if we paid more?" calculator
+- Plan ahead: trips, purchases, leave, pay changes, costs starting/ending, rate changes, extra repayments, lump sums — 3-year cash chart with shortfall warnings and a long view to mortgage-free
+
 ### How the numbers are worked out
 All calculations live in `src/lib/` (pure functions, unit tested with `npm test`):
 - `dates.js` — local calendar-day dates (no timezone off-by-one)
 - `schedule.js` — recurring dates: weekly → yearly, keeps the day of month, optional "Friday before / Monday after" for weekends
 - `finance.js` — per-period conversions, bill status, transfer plan, bills snapshot and forecast
 - `migrate.js` — upgrades older budgets in memory (old pay/transfer settings become schedules)
+- `import/` — CSV parsing, payee clean-up, transfer pairing, categories, ledger/de-duplication
+- `recurring.js`, `billsAudit.js` — recurring payments and the bills check
+- `spending.js` — spending by period and category, highlights, cash flow
+- `mortgage.js`, `wealth.js`, `projection.js` — loans, net worth and the plan projection
 
 ### Onboarding
 - Guided setup wizard for new budgets

@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFirebase } from '../contexts/FirebaseContext'
-import { LayoutDashboard, Receipt, CreditCard, Calculator, Settings, Share2, ArrowLeft, Loader, Wallet, Moon, Sun, PieChart, MoreHorizontal } from 'lucide-react'
+import { LayoutDashboard, Receipt, CreditCard, Calculator, Settings, Share2, ArrowLeft, Loader, Wallet, Moon, Sun, PieChart, MoreHorizontal, Landmark } from 'lucide-react'
 import Dashboard from './Dashboard'
 import Expenses from './Expenses'
 import Salaries from './Salaries'
 import BillAllocation from './BillAllocation'
 import SpendingTab from './Spending/SpendingTab'
+import WealthTab from './Wealth/WealthTab'
 import SettingsPage from './Settings'
 import ShareBudgetModal from './ShareBudgetModal'
 import OnboardingFlow from './OnboardingFlow'
@@ -139,6 +140,7 @@ export default function BudgetApp({ onBack }) {
     { id: 'salaries', name: 'Income', icon: CreditCard },
     { id: 'allocation', name: 'Bills', icon: Calculator },
     { id: 'spending', name: 'Spending', icon: PieChart },
+    { id: 'wealth', name: 'Wealth', icon: Landmark },
     { id: 'settings', name: 'Settings', icon: Settings }
   ]
 
@@ -240,6 +242,17 @@ export default function BudgetApp({ onBack }) {
             />
           )}
           {activeTab === 'spending' && <SpendingTab ledger={ledger} settings={settings} />}
+          {activeTab === 'wealth' && (
+            <WealthTab
+              ledger={ledger}
+              budget={budget}
+              settings={settings}
+              people={people}
+              salaries={salaries}
+              saveWealth={(w) => saveToFirebase('wealth', w)}
+              savePlans={(p) => saveToFirebase('plans', p)}
+            />
+          )}
           {activeTab === 'expenses' && (
             <Expenses
               expenses={expenses}

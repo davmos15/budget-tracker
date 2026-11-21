@@ -116,7 +116,7 @@ test('inactive or everyday series are never matched; loan fees are not bills-acc
 
 test('unevenly timed bills are judged on the yearly total only', () => {
   const items = [item({ name: 'Council Rates', amount: 1925.85, frequency: 'yearly', paymentType: 'manual' })]
-  const found = [series({ merchant: 'Glen Eira Rates', category: 'Rates & strata', amount: 477.91, frequency: 'quarterly', pattern: 'variable', unevenTiming: true, annual: 1911.65 })]
+  const found = [series({ merchant: 'Council Rates', category: 'Rates & strata', amount: 477.91, frequency: 'quarterly', pattern: 'variable', unevenTiming: true, annual: 1911.65 })]
   const a = auditBills({ expenses: items, series: found, today: TODAY })
   assert.equal(a.items[0].status, 'ok')
   const gas = auditBills({ expenses: [item({ name: 'Gas', amount: 100, frequency: 'monthly' })], series: [series({ merchant: 'Powershop', category: 'Utilities', amount: 108, frequency: 'monthly', pattern: 'variable', unevenTiming: true, annual: 1297.27 })], today: TODAY })

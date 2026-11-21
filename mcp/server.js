@@ -12,6 +12,8 @@ import { summarize, updateItems, addItem, removeItem, markPaid, updateBillsSetti
 import { FREQUENCIES } from '../src/lib/schedule.js'
 import { importStatement, listTransactions, reviewQueue, categorise, addRule, removeRule, setAccount, spendingSummary, billsAuditSummary } from './ledger.js'
 import { KIND_LABELS } from '../src/lib/import/ledger.js'
+import { wealthSummary, projectionSummary, setHomeValue, setLoanSettings, setAssumptions, addPlanEvent, updatePlanEvent, removePlanEvent } from './wealth.js'
+import { EVENT_TYPES } from '../src/lib/projection.js'
 
 const server = new McpServer({ name: 'budget-tracker', version: '1.0.0' })
 
@@ -224,5 +226,79 @@ server.registerTool('bills_audit', {
   const [ledger, { data }] = await Promise.all([readLedger(budget), readBudget(budget)])
   return billsAuditSummary(ledger, data, { today: new Date().toISOString().slice(0, 10) })
 }))
+
+// ---------------------------------------------------------------------------
+// Wealth, mortgage and plans
+// ---------------------------------------------------------------------------
+
+const todayStr = () => new Date().toISOString().slice(0, 10)
+const ymArg = z.string().regex(/^\d{4}-\d{2}$/, 'Use YYYY-MM')
+
+server.registerTool('get_wealth', {
+  description: 'Net worth now (home, cash, mortgage per loan with rate/repayment/payoff, other debts), assumptions and planned events.',
+  inputSchema: { budget: budgetArg }
+}, run(async ({ budget }) => {
+  const [ledger, { data }] = await Promise.all([readLedger(budget), readBudget(budget)])
+  return wealthSummary(ledger, data, { today: todayStr() })
+}))
+
+server.registerTool('get_projection', {
+  description: 'Project cash, mortgage and net worth forward from real income/spending plus planned events: next 3 years by quarter, long view every 5 years, payoff dates and cash shortfall warnings.',
+  inputSchema: { budget: budgetArg, withPlans: z.boolean().optional().describe('false = baseline without planned events') }
+}, run(async ({ budget, withPlans }) => {
+  const [ledger, { data }] = await Promise.all([readLedger(budget), readBudget(budget)])
+  return projectionSummary(ledger, data, { today: todayStr(), withPlans: withPlans !== false })
+}))
+
+server.registerTool('set_home_value', {
+  description: 'Record an estimate of the home value (used for net worth and equity).',
+  inputSchema: { budget: budgetArg, value: z.number().positive(), date: date.optional().describe('Defaults to today') }
+}, run(async ({ budget, value, date: d }) => changeBudget(budget, (data) => setHomeValue(data, { value, date: d || todayStr() }))))
+
+server.registerTool('set_loan', {
+  description: 'Override a loan\'s interest rate (%) or repayment, or set which account offsets it. null clears an override.',
+  inputSchema: {
+    budget: budgetArg, loan: z.string().describe('Loan account name or id'),
+    rate: z.number().nullable().optional().describe('Yearly %, e.g. 5.84'), repayment: z.number().nullable().optional(),
+    offsetAccount: z.string().nullable().optional()
+  }
+}, run(async ({ budget, ...o }) => {
+  const ledger = await readLedger(budget)
+  return changeBudget(budget, (data) => setLoanSettings(data, ledger.config.accounts, o))
+}))
+
+server.registerTool('set_assumptions', {
+  description: 'Projection assumptions: yearly % growth for pay, prices and home value; income source (actual bank data or budget salaries); optional fixed income/spending per month (null = use actual).',
+  inputSchema: {
+    budget: budgetArg, salaryGrowth: z.number().optional(), inflation: z.number().optional(), homeGrowth: z.number().optional(),
+    incomeSource: z.enum(['actual', 'budget']).optional(), incomePerMonth: z.number().nullable().optional(), spendingPerMonth: z.number().nullable().optional()
+  }
+}, run(async ({ budget, ...o }) => changeBudget(budget, (data) => setAssumptions(data, o))))
+
+const eventFields = {
+  name: z.string().optional(),
+  date: ymArg.optional(), endDate: ymArg.optional(),
+  amount: z.number().optional().describe('Effect on cash: negative = cost, positive = money in (extra_repayment/lump_sum: positive amount paid)'),
+  person: z.string().optional().describe('Person name, for income_change and leave'),
+  percent: z.number().optional().describe('income_change: % pay change'),
+  percentOfPay: z.number().optional().describe('leave: % of pay received while off'),
+  rate: z.number().optional().describe('rate_change: new yearly rate in %'),
+  loanId: z.string().optional(), enabled: z.boolean().optional()
+}
+
+server.registerTool('add_plan_event', {
+  description: 'Add a planned life event to the projection. Types: ' + Object.entries(EVENT_TYPES).map(([k, v]) => k + ' (' + v.help + ')').join('; '),
+  inputSchema: { budget: budgetArg, type: z.enum(Object.keys(EVENT_TYPES)), ...eventFields, date: ymArg }
+}, run(async ({ budget, ...e }) => changeBudget(budget, (data) => addPlanEvent(data, e))))
+
+server.registerTool('update_plan_event', {
+  description: 'Change a planned event (by id from get_wealth). Only the fields given change.',
+  inputSchema: { budget: budgetArg, id: z.string(), type: z.enum(Object.keys(EVENT_TYPES)).optional(), ...eventFields }
+}, run(async ({ budget, id, ...patch }) => changeBudget(budget, (data) => updatePlanEvent(data, id, patch))))
+
+server.registerTool('remove_plan_event', {
+  description: 'Delete a planned event by id.',
+  inputSchema: { budget: budgetArg, id: z.string() }
+}, run(async ({ budget, id }) => changeBudget(budget, (data) => removePlanEvent(data, id))))
 
 await server.connect(new StdioServerTransport())

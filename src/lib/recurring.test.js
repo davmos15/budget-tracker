@@ -96,8 +96,8 @@ test('seriesKey is stable and ignores digits/case', () => {
 test('grouping ignores word order/filler words and uses the BPAY biller', () => {
   assert.equal(seriesKey({ merchant: 'Owners Corp Unit 5' }), seriesKey({ merchant: 'Unit 5 Owners Corp Fees' }))
   assert.equal(
-    seriesKey({ merchant: 'Glen Eira Rates', rawDesc: 'Glen Eira Rates - BPAY Bill Payment - Receipt 1 To GLEN EIRA COUN' }),
-    seriesKey({ merchant: 'Glen Eira City Council', rawDesc: 'Glen Eira City Council - BPAY Bill Payment - Receipt 2 To GLEN EIRA COUN' })
+    seriesKey({ merchant: 'Council Rates', rawDesc: 'Council Rates - BPAY Bill Payment - Receipt 1 To CITY COUNCIL' }),
+    seriesKey({ merchant: 'City Council', rawDesc: 'City Council - BPAY Bill Payment - Receipt 2 To CITY COUNCIL' })
   )
 })
 
@@ -114,10 +114,10 @@ test('one payee with two different yearly bills is split by time of year', () =>
 })
 
 test('core bills paid at uneven times still show, from what was paid in the last year', () => {
-  const r = (date, amount) => t(date, amount, 'Glen Eira Rates', { category: 'Rates & strata' })
+  const r = (date, amount) => t(date, amount, 'Council Rates', { category: 'Rates & strata' })
   const tx = [r('2025-02-10', -449.55), r('2025-05-11', -449.75), r('2025-08-06', -481.45), r('2025-10-29', -481.45),
     r('2026-01-22', -481.45), r('2026-01-27', -481.45), r('2026-03-20', -481.45), r('2026-10-25', -467.3)]
-  const s = find(detectRecurring(tx, { today: TODAY }), 'Glen Eira Rates')
+  const s = find(detectRecurring(tx, { today: TODAY }), 'Council Rates')
   assert.equal(s.frequency, 'quarterly')
   assert.equal(s.unevenTiming, true)
   assert.equal(s.annual, 1911.65) // 2025-11-21 .. 2026-11-21

@@ -22,6 +22,10 @@ app shows, with the same maths (`src/lib`).
 | `add_rule` / `remove_rule` / `list_rules` | Manage categorisation rules |
 | `set_account` | Account name, type, number (so transfers pair) and card repayment text |
 | `spending_summary` | Spending by category and income for a date range |
+| `bills_audit` | Bills vs bank data: matches, changes, new regular payments, bills-account flows |
+| `get_wealth` / `get_projection` | Net worth, loans, plans; projection with payoff dates and shortfalls |
+| `set_home_value` / `set_loan` / `set_assumptions` | Wealth inputs |
+| `add_plan_event` / `update_plan_event` / `remove_plan_event` | Planned life events |
 
 Every change is a Firestore transaction, so it won't overwrite something saved
 in the app at the same moment.
