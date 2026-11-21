@@ -12,6 +12,7 @@ import SettingsPage from './Settings'
 import ShareBudgetModal from './ShareBudgetModal'
 import OnboardingFlow from './OnboardingFlow'
 import { normalizeSalaries, normalizeSettings } from '../lib/migrate'
+import { useLedger } from '../hooks/useLedger'
 
 export default function BudgetApp({ onBack }) {
   const { user, budget, budgetId, budgetOwnerId, budgetLoading, isNewBudget, setIsNewBudget } = useFirebase()
@@ -19,6 +20,8 @@ export default function BudgetApp({ onBack }) {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [showShareModal, setShowShareModal] = useState(false)
   const [showMore, setShowMore] = useState(false)
+  // Imported bank transactions, shared by the Spending and Bills tabs
+  const ledger = useLedger()
   const [saving, setSaving] = useState(false)
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -236,7 +239,7 @@ export default function BudgetApp({ onBack }) {
               onOpenBills={() => setActiveTab('allocation')}
             />
           )}
-          {activeTab === 'spending' && <SpendingTab settings={settings} />}
+          {activeTab === 'spending' && <SpendingTab ledger={ledger} settings={settings} />}
           {activeTab === 'expenses' && (
             <Expenses
               expenses={expenses}
@@ -259,6 +262,7 @@ export default function BudgetApp({ onBack }) {
           )}
           {activeTab === 'allocation' && (
             <BillAllocation
+              ledger={ledger}
               expenses={expenses}
               setExpenses={updateExpenses}
               salaries={salaries}

@@ -40,7 +40,14 @@ export function cleanMerchant(rawDesc, merchantName) {
   s = s.split(/\s+-\s+/)[0]
   s = s.replace(PROCESSORS, '')
   s = s.replace(/\b\d{3,}\b/g, ' ')         // card/ref numbers
+  s = s.replace(/\b(?=[a-z]*\d)(?=\d*[a-z])[a-z0-9]{5,}\b/gi, ' ') // reference codes like P48C4CB5BD
   s = s.replace(/\s+(AUS|AU|NSW|VIC|QLD|SA|WA|TAS|ACT|NT)$/i, '')
-  s = s.replace(/[*#]+/g, ' ').replace(/\s+/g, ' ').trim()
+  s = s.replace(/[*#\\]+/g, ' ').replace(/\s+/g, ' ').trim()
   return titleCase(s) || 'Unknown'
+}
+
+/** The biller named on an ING BPAY payment ("... BPAY Bill Payment - Receipt 1 To GLEN EIRA COUN"). */
+export function bpayBiller(desc) {
+  const m = /BPAY.*?\bTo\s+(.+)$/i.exec(desc || '')
+  return m ? m[1].trim().replace(/\s+/g, ' ').toUpperCase() : null
 }

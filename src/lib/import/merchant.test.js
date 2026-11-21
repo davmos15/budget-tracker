@@ -46,3 +46,19 @@ test('counterparty with 9-10 digit account numbers and "To BSB"', () => {
   assert.equal(extractCounterparty('Weekend - Internal Transfer - Receipt 661285 Savings Maximiser 0055556666'), '55556666')
   assert.equal(extractCounterparty('Ma - Transfer to Sam ING ACCOUNT - Receipt 589999 To 923100 009999999'), '09999999')
 })
+
+test('cleanMerchant drops reference codes that mix letters and digits', () => {
+  assert.equal(cleanMerchant('Spotify P48C4CB5BD - Visa Purchase - Receipt 197006In Sydney'), 'Spotify')
+  assert.equal(cleanMerchant('Only About Child A00NQGTU031N  - Receipt 113769'), 'Only About Child')
+  assert.equal(cleanMerchant('7-Eleven 2051 - Visa Purchase'), '7-Eleven')
+})
+
+test('cleanMerchant drops stray backslashes', () => {
+  assert.equal(cleanMerchant('TANGERINE TELECOM\\ - Visa Purchase - Receipt 1'), 'Tangerine Telecom')
+})
+
+test('bpayBiller', async () => {
+  const { bpayBiller } = await import('./merchant.js')
+  assert.equal(bpayBiller('Glen Eira Rates - BPAY Bill Payment - Receipt 513809 To GLEN EIRA COUN'), 'GLEN EIRA COUN')
+  assert.equal(bpayBiller('Coles - Visa Purchase'), null)
+})

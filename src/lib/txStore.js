@@ -1,7 +1,7 @@
 // Firestore storage for imported transactions (app side).
 //
 //   users/{owner}/budgets/{budget}/txMonths/{YYYY-MM}  { month, transactions, updatedAt }
-//   users/{owner}/budgets/{budget}/txMeta/config       { accounts, rules }
+//   users/{owner}/budgets/{budget}/txMeta/config       { accounts, rules, billLinks, billDismissed }
 //
 // Only budget members can read or write these (see firestore.rules).
 
@@ -33,11 +33,13 @@ export async function saveMonths(ownerId, budgetId, byMonth) {
 }
 
 export async function saveConfig(ownerId, budgetId, config) {
-  await setDoc(configRef(ownerId, budgetId), {
-    accounts: (config.accounts || []).map(clean),
-    rules: (config.rules || []).map(clean),
-    updatedAt: serverTimestamp()
-  }, { merge: true })
+  const data = { updatedAt: serverTimestamp() }
+  if (config.accounts) data.accounts = config.accounts.map(clean)
+  if (config.rules) data.rules = config.rules.map(clean)
+  // Bills check: { expenseId: seriesKey } links and series keys marked "not a bill"
+  if (config.billLinks) data.billLinks = config.billLinks
+  if (config.billDismissed) data.billDismissed = config.billDismissed
+  await setDoc(configRef(ownerId, budgetId), data, { merge: true })
 }
 
 /** Remove every imported transaction and setting (used when a budget is deleted). */

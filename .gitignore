@@ -64,3 +64,6 @@ desktop.ini
 # pnpm-lock.yaml
 # MCP: who the local server works for
 mcp/config.local.json
+
+# Local preview harness with a snapshot of real data (never commit)
+/preview/

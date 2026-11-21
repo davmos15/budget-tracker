@@ -152,7 +152,7 @@ export async function readLedger(ref) {
   const byMonth = {}
   months.forEach(d => { byMonth[d.id] = d.get('transactions') || [] })
   const c = cfg.exists ? cfg.data() : {}
-  return { meta: b, byMonth, config: { accounts: c.accounts || [], rules: c.rules || [] } }
+  return { meta: b, byMonth, config: { accounts: c.accounts || [], rules: c.rules || [], billLinks: c.billLinks || {}, billDismissed: c.billDismissed || [] } }
 }
 
 const stripUndefined = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined))
@@ -172,9 +172,8 @@ export async function writeMonths(meta, byMonth) {
 }
 
 export async function writeConfig(meta, config) {
-  await budgetRef(meta).collection('txMeta').doc('config').set({
-    accounts: config.accounts.map(stripUndefined),
-    rules: config.rules.map(stripUndefined),
-    updatedAt: new Date()
-  }, { merge: true })
+  const data = { accounts: config.accounts.map(stripUndefined), rules: config.rules.map(stripUndefined), updatedAt: new Date() }
+  if (config.billLinks) data.billLinks = config.billLinks
+  if (config.billDismissed) data.billDismissed = config.billDismissed
+  await budgetRef(meta).collection('txMeta').doc('config').set(data, { merge: true })
 }

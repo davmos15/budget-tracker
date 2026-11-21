@@ -216,3 +216,29 @@ export function spendingSummary(ledger, { from, to } = {}) {
 }
 
 export { groupByMonth }
+
+/** The Bills-tab "check against bank data", in a form that's easy to read in chat. */
+export async function billsAuditSummary(ledger, budget, { today }) {
+  const { detectRecurring } = await import('../src/lib/recurring.js')
+  const { auditBills, billsAccountFlows } = await import('../src/lib/billsAudit.js')
+  const txns = allTxns(ledger.byMonth)
+  const series = detectRecurring(txns, { today })
+  const audit = auditBills({
+    expenses: budget.expenses || [], series, today, txns, accounts: ledger.config.accounts,
+    links: ledger.config.billLinks, dismissed: ledger.config.billDismissed
+  })
+  const bills = ledger.config.accounts.find(a => a.kind === 'offset') || ledger.config.accounts.find(a => /bill/i.test(a.name))
+  const yearAgo = new Date(today); yearAgo.setFullYear(yearAgo.getFullYear() - 1)
+  return {
+    totals: audit.totals,
+    variableBuffer: audit.variableBuffer,
+    billsAccountLast12Months: bills ? billsAccountFlows(txns, bills.id, { from: yearAgo.toISOString().slice(0, 10), to: today }) : null,
+    items: audit.items.map(r => ({
+      name: r.expense.name, id: r.expense.id, status: r.status,
+      budget: { amount: r.expense.amount, frequency: r.expense.frequency },
+      bank: r.series ? { payee: r.series.merchant, amount: r.series.amount, frequency: r.series.frequency, last: r.series.last, active: r.series.active } : (r.lastSeen || null),
+      suggestion: r.status === 'ok' ? undefined : r.suggestion
+    })),
+    newBills: audit.newBills.map(b => ({ payee: b.series.merchant, ...b.suggestion, paidLastYear: b.series.annual }))
+  }
+}

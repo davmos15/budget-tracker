@@ -10,7 +10,7 @@ import { readFile } from 'node:fs/promises'
 import { listBudgets, readBudget, changeBudget, readLedger, writeMonths, writeConfig } from './firestore.js'
 import { summarize, updateItems, addItem, removeItem, markPaid, updateBillsSettings, setBuffer, PAYMENT_TYPE_VALUES } from './budget.js'
 import { FREQUENCIES } from '../src/lib/schedule.js'
-import { importStatement, listTransactions, reviewQueue, categorise, addRule, removeRule, setAccount, spendingSummary } from './ledger.js'
+import { importStatement, listTransactions, reviewQueue, categorise, addRule, removeRule, setAccount, spendingSummary, billsAuditSummary } from './ledger.js'
 import { KIND_LABELS } from '../src/lib/import/ledger.js'
 
 const server = new McpServer({ name: 'budget-tracker', version: '1.0.0' })
@@ -216,5 +216,13 @@ server.registerTool('spending_summary', {
   description: 'Spending by category and total income between two dates (transfers, card repayments and loan payments excluded).',
   inputSchema: { budget: budgetArg, from: date.optional(), to: date.optional() }
 }, run(async ({ budget, ...o }) => spendingSummary(await readLedger(budget), o)))
+
+server.registerTool('bills_audit', {
+  description: 'Compare the budget bills with imported bank data: which match, which changed (with suggested amount/frequency/next due), which look cancelled, regular payments missing from the budget, and how the bills account actually moved over 12 months. Read-only — apply changes with update_items/add_item after the user agrees.',
+  inputSchema: { budget: budgetArg }
+}, run(async ({ budget }) => {
+  const [ledger, { data }] = await Promise.all([readLedger(budget), readBudget(budget)])
+  return billsAuditSummary(ledger, data, { today: new Date().toISOString().slice(0, 10) })
+}))
 
 await server.connect(new StdioServerTransport())

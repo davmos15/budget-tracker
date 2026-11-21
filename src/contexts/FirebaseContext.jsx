@@ -3,7 +3,8 @@ import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { auth, db } from '../firebase'
 
-const FirebaseContext = createContext({})
+// Exported so previews/tests can supply their own values
+export const FirebaseContext = createContext({})
 
 export function useFirebase() {
   return useContext(FirebaseContext)

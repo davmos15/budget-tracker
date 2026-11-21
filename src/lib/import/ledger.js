@@ -47,7 +47,10 @@ export function buildLedger(existing, incoming, { accounts, rules = [] }) {
     if (byId.has(t.id)) duplicates++
     else { byId.set(t.id, t); added++ }
   }
-  const sorted = [...byId.values()].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+  // Re-derive payee names so improvements to the clean-up apply to old imports too
+  const sorted = [...byId.values()]
+    .map(t => { const merchant = cleanMerchant(t.rawDesc, t.merchantName); return merchant === t.merchant ? t : { ...t, merchant } })
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
   const all = categoriseAll(classifyAll(sorted, accounts), rules)
   return { all, added, duplicates }
 }

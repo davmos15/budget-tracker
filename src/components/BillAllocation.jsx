@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { Plus, X, AlertTriangle, CheckCircle2, Edit2, ChevronUp, ChevronDown, ArrowRightLeft, Info, Undo2, CalendarPlus, TrendingDown } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts'
 import InfoTooltip from './InfoTooltip'
+import BillsCheck from './BillsCheck'
 import { billsSnapshot, billOwnersMatter, forecast, formatMoney, annualAmount, perPeriod, isAutoPay, markBillPaid, paymentTypeInfo, SPLIT_METHODS, PERIOD_NOUN, isBill } from '../lib/finance'
 import { FREQUENCY_LABELS, describeSchedule } from '../lib/schedule'
 import { formatShort, relativeDays, todayISO, diffDays, today, formatDate } from '../lib/dates'
@@ -16,7 +17,8 @@ export default function BillAllocation({
   setSettings,
   staticAmounts,
   setStaticAmounts,
-  onOpenSettings
+  onOpenSettings,
+  ledger
 }) {
   const [showAddStatic, setShowAddStatic] = useState(false)
   const [editingStatic, setEditingStatic] = useState(null)
@@ -203,6 +205,9 @@ export default function BillAllocation({
           <button onClick={() => setUndo(null)} className="p-1 opacity-60 hover:opacity-100"><X className="h-4 w-4" /></button>
         </div>
       )}
+
+      {/* Compare bills with imported bank transactions (only shows once there are some) */}
+      {ledger && <BillsCheck ledger={ledger} expenses={expenses} setExpenses={setExpenses} categories={categories} people={people} salaries={salaries} settings={settings} />}
 
       {/* Snapshot */}
       <div className="card overflow-hidden">

@@ -5,12 +5,12 @@ import { monthsRef, configRef } from '../lib/txStore'
 
 /**
  * Live imported transactions + import settings for the open budget.
- * Returns { loading, error, txns (newest first), byMonth, config: { accounts, rules } }.
+ * Returns { loading, error, txns (newest first), byMonth, config: { accounts, rules, billLinks, billDismissed } }.
  */
 export function useLedger() {
   const { budgetId, budgetOwnerId } = useFirebase()
   const [byMonth, setByMonth] = useState({})
-  const [config, setConfig] = useState({ accounts: [], rules: [] })
+  const [config, setConfig] = useState({ accounts: [], rules: [], billLinks: {}, billDismissed: [] })
   const [loaded, setLoaded] = useState({ months: false, config: false })
   const [error, setError] = useState(null)
 
@@ -26,7 +26,7 @@ export function useLedger() {
     }, fail)
     const unConfig = onSnapshot(configRef(budgetOwnerId, budgetId), (snap) => {
       const d = snap.exists() ? snap.data() : {}
-      setConfig({ accounts: d.accounts || [], rules: d.rules || [] })
+      setConfig({ accounts: d.accounts || [], rules: d.rules || [], billLinks: d.billLinks || {}, billDismissed: d.billDismissed || [] })
       setLoaded(l => ({ ...l, config: true }))
     }, fail)
     return () => { unMonths(); unConfig() }

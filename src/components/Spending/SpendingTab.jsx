@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { Loader, AlertTriangle } from 'lucide-react'
-import { useLedger } from '../../hooks/useLedger'
 import { needsReview } from '../../lib/import/ledger'
 import TransactionList from './TransactionList'
 import ReviewQueue from './ReviewQueue'
@@ -12,8 +11,7 @@ const VIEWS = [
   { id: 'import', name: 'Import' }
 ]
 
-export default function SpendingTab({ settings }) {
-  const ledger = useLedger()
+export default function SpendingTab({ ledger, settings }) {
   const [view, setView] = useState(null)
   const reviewCount = useMemo(() => ledger.txns.filter(needsReview).length, [ledger.txns])
   // Start on Import when there's nothing yet
